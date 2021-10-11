@@ -402,10 +402,14 @@ namespace xclcpuemhal2 {
             xilinxInstall = std::string(installEnvvar);
           }
         }
-        char *xilinxVivadoEnvvar = getenv("XILINX_VIVADO");
-        if(xilinxVivadoEnvvar && vitisInstallEnvvar)
+        
+        char *xilinxHLSEnvVar = getenv("XILINX_HLS");
+        char *xilinxVivadoEnvVar = getenv("XILINX_VIVADO");
+
+        if (vitisInstallEnvvar && xilinxHLSEnvVar && xilinxVivadoEnvVar)
         {
-          std::string sHlsBinDir = xilinxVivadoEnvvar;
+          std::string sHlsBinDir = xilinxHLSEnvVar;
+          std::string sVivadoBinDir = xilinxVivadoEnvVar;
           std::string sVitisBinDir = vitisInstallEnvvar;
           std::string sLdLibs("");
           std::string DS("/");
@@ -421,7 +425,10 @@ namespace xclcpuemhal2 {
           sLdLibs += sHlsBinDir + DS + sPlatform + DS + "lib" + DS + "csim" + ":";         
           sLdLibs += sHlsBinDir + DS + "lib" + DS + "lnx64.o" + DS + "Default" + DS + ":";
           sLdLibs += sHlsBinDir + DS + "lib" + DS + "lnx64.o" + DS + ":";
+          sLdLibs += sVivadoBinDir + DS + "lib" + DS + "lnx64.o" + DS + ":";
+          sLdLibs += sVivadoBinDir + DS + "lib" + DS + "lnx64.o" + DS + "Default" + DS + ":";
           sLdLibs += sVitisBinDir + DS + "lib" + DS + "lnx64.o" + DS;
+          
           setenv("LD_LIBRARY_PATH",sLdLibs.c_str(),true);
         }
         
@@ -469,9 +476,20 @@ namespace xclcpuemhal2 {
             childArgv[5] = portStream.str().c_str() ;
           }
         }
-        int r = execl(modelDirectory.c_str(), childArgv[0], childArgv[1],
+
+
+        int r = 0;
+
+        if (xclemulation::is_sw_emulation() && xrt_core::config::get_flag_sw_emu_kernel_debug()){// Launch sw_emu device Process in GDB -> Emulation.kernel-dbg =true
+	   std::cout << "INFO : "<< "SW_EMU Kernel debug enabled in GDB." << std::endl;
+	   std::string commandStr = "/usr/bin/gdb -args " + modelDirectory + "; csh";
+           r = execl("/usr/bin/xterm", "/usr/bin/xterm", "-hold", "-T", "SW_EMU Kernel Debug", "-geometry", "120x80", "-fa", "Monospace", "-fs", "14", "-e", "csh", "-c", commandStr.c_str(), (void*)NULL);
+        }
+        else{
+	   r = execl(modelDirectory.c_str(), childArgv[0], childArgv[1],
             childArgv[2], childArgv[3], childArgv[4], childArgv[5],
             NULL) ;
+        }
 
         //fclose (stdout);
         if(r == -1){std::cerr << "FATAL ERROR : child process did not launch" << std::endl; exit(1);}
@@ -856,7 +874,7 @@ namespace xclcpuemhal2 {
     }
 
     fflush(stdout);
-    xclWriteAddrKernelCtrl_RPC_CALL(xclWriteAddrKernelCtrl,space,offset,hostBuf,size,kernelArgsInfo);
+    xclWriteAddrKernelCtrl_RPC_CALL(xclWriteAddrKernelCtrl,space,offset,hostBuf,size,kernelArgsInfo,0,0);
     PRINTENDFUNC;
     return size;
   }
@@ -887,7 +905,7 @@ namespace xclcpuemhal2 {
       PRINTENDFUNC;
       return -1;
     }
-    xclReadAddrKernelCtrl_RPC_CALL(xclReadAddrKernelCtrl,space,offset,hostBuf,size);
+    xclReadAddrKernelCtrl_RPC_CALL(xclReadAddrKernelCtrl,space,offset,hostBuf,size,0,0);
     PRINTENDFUNC;
     return size;
 
@@ -1427,8 +1445,18 @@ int CpuemShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, s
     if (!ack)
       return -1;
   }
+  else if (sBO->fd >= 0) {
+    int ack = false;
+    auto fItr = mFdToFileNameMap.find(sBO->fd);
+    if (fItr != mFdToFileNameMap.end()) {
+      const std::string& sFileName = std::get<0>((*fItr).second);
+      xclCopyBOFromFd_RPC_CALL(xclCopyBOFromFd, sFileName, dBO->base, size, src_offset, dst_offset);
+    }
+    if (!ack)
+      return -1;
+  }
   else {
-    std::cerr << "ERROR: Copy buffer from source to destination faliled" << std::endl;
+    std::cerr << "ERROR: Copy buffer from source to destination failed" << std::endl;
     return -1;
   }
 
@@ -1478,12 +1506,16 @@ void *CpuemShim::xclMapBO(unsigned int boHandle, bool write)
     return data;
   }
 
-  void *pBuf=nullptr;
+  void *pBuf = nullptr;
   if (posix_memalign(&pBuf, getpagesize(), bo->size))
   {
     if (mLogStream.is_open()) mLogStream << "posix_memalign failed" << std::endl;
-    pBuf=nullptr;
+    pBuf = nullptr;
+    PRINTENDFUNC;
+    return pBuf;
   }
+  
+  memset(pBuf, 0, bo->size);
   bo->buf = pBuf;
   PRINTENDFUNC;
   return pBuf;

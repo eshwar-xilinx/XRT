@@ -18,6 +18,8 @@
  * Bit 2: ap_idle(Read only).
  * Bit 3: ap_ready(Read only). Self clear after clear ap_start.
  * Bit 4: ap_continue(Read/Set). Self clear.
+ * Bit 5-7: Not support yet
+ * Bit 8: ap_sw_reset. Clear when reset is done.
  */
 #define CTRL		0x0
 /* Global interrupt enable: Set bit 0 to enable. Clear it to disable */
@@ -119,7 +121,7 @@ static void cu_hls_start(void *core)
  * register.
  */
 static inline void
-cu_hls_ctrl_hs_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
+cu_hls_ctrl_hs_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status, bool force)
 {
 	u32 ctrl_reg = 0;
 	u32 done_reg = 0;
@@ -128,7 +130,7 @@ cu_hls_ctrl_hs_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
 	/* Avoid access CU register unless we do have running commands.
 	 * This has a huge impact on performance.
 	 */
-	if (!cu_hls->run_cnts)
+	if (!force && !cu_hls->run_cnts)
 		return;
 
 	ctrl_reg = cu_read32(cu_hls, CTRL);
@@ -152,7 +154,7 @@ cu_hls_ctrl_hs_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
  * stall until ap_continue bit is set.
  */
 static inline void
-cu_hls_ctrl_chain_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
+cu_hls_ctrl_chain_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status, bool force)
 {
 	u32 ctrl_reg = 0;
 	u32 done_reg = 0;
@@ -165,7 +167,7 @@ cu_hls_ctrl_chain_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
 	/* Access CU when there are unsed credits or running commands
 	 * This has a huge impact on performance.
 	 */
-	if (!used_credit && !cu_hls->run_cnts)
+	if (!force && !used_credit && !cu_hls->run_cnts)
 		return;
 
 	/* HLS ap_ctrl_chain reqiured software to set ap_continue before
@@ -198,7 +200,7 @@ cu_hls_ctrl_chain_check(struct xrt_cu_hls *cu_hls, struct xcu_status *status)
 	status->new_status = ctrl_reg;
 }
 
-static void cu_hls_check(void *core, struct xcu_status *status)
+static void cu_hls_check(void *core, struct xcu_status *status, bool force)
 {
 	struct xrt_cu_hls *cu_hls = core;
 
@@ -211,9 +213,9 @@ static void cu_hls_check(void *core, struct xcu_status *status)
 	}
 
 	if (cu_hls->ctrl_chain)
-		cu_hls_ctrl_chain_check(cu_hls, status);
+		cu_hls_ctrl_chain_check(cu_hls, status, force);
 	else
-		cu_hls_ctrl_hs_check(cu_hls, status);
+		cu_hls_ctrl_hs_check(cu_hls, status, force);
 }
 
 static void cu_hls_enable_intr(void *core, u32 intr_type)
@@ -300,6 +302,25 @@ static u32 cu_hls_clear_intr(void *core)
 	return cu_read32(cu_hls, ISR);
 }
 
+static void cu_hls_reset(void *core)
+{
+	struct xrt_cu_hls *cu_hls = core;
+
+	cu_write32(cu_hls, CTRL, CU_AP_SW_RESET);
+}
+
+static bool cu_hls_reset_done(void *core)
+{
+	struct xrt_cu_hls *cu_hls = core;
+	u32 ctrl_reg;
+
+	ctrl_reg = cu_read32(cu_hls, CTRL);
+	if (ctrl_reg & CU_AP_SW_RESET)
+		return false;
+
+	return true;
+}
+
 static struct xcu_funcs xrt_cu_hls_funcs = {
 	.alloc_credit	= cu_hls_alloc_credit,
 	.free_credit	= cu_hls_free_credit,
@@ -310,6 +331,8 @@ static struct xcu_funcs xrt_cu_hls_funcs = {
 	.enable_intr	= cu_hls_enable_intr,
 	.disable_intr	= cu_hls_disable_intr,
 	.clear_intr	= cu_hls_clear_intr,
+	.reset		= cu_hls_reset,
+	.reset_done	= cu_hls_reset_done,
 };
 
 int xrt_cu_hls_init(struct xrt_cu *xcu)

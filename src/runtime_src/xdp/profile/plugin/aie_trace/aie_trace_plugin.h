@@ -31,6 +31,8 @@ namespace xdp {
   class AIETraceOffload;
   class AIETraceLogger;
 
+  using tile_type = xrt_core::edge::aie::tile_type;
+
   class AieTracePlugin : public XDPPlugin
   {
     public:
@@ -57,6 +59,14 @@ namespace xdp {
       void releaseCurrentTileCounters(int numCoreCounters, int numMemoryCounters);
       bool setMetrics(uint64_t deviceId, void* handle);
       void setFlushMetrics(uint64_t deviceId, void* handle);
+
+      // Aie resource manager utility functions
+      bool tileHasFreeRsc(xaiefal::XAieDev* aieDevice, XAie_LocType& loc, const std::string& metricSet);
+      void printTileStats(xaiefal::XAieDev* aieDevice, const tile_type& tile);
+
+      // Utility functions
+      std::string getMetricSet(void* handle);
+      std::vector<tile_type> getTilesForTracing(void* handle);
 
     private:
       // Runtime or compile-time specified trace metrics?
@@ -86,9 +96,9 @@ namespace xdp {
       std::map<std::string, EventVector> memoryEventSets;
 
       // AIE profile counters
-      std::vector<xrt_core::edge::aie::tile_type> coreCounterTiles;
-      std::vector<std::shared_ptr<xaiefal::XAiePerfCounter>> coreCounters;
-      std::vector<std::shared_ptr<xaiefal::XAiePerfCounter>> memoryCounters;
+      std::vector<xrt_core::edge::aie::tile_type> mCoreCounterTiles;
+      std::vector<std::shared_ptr<xaiefal::XAiePerfCounter>> mCoreCounters;
+      std::vector<std::shared_ptr<xaiefal::XAiePerfCounter>> mMemoryCounters;
 
       // Counter metrics (same for all sets)
       EventType   coreTraceStartEvent;

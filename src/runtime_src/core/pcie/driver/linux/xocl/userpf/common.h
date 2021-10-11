@@ -47,6 +47,15 @@
 	xocl_info(&XDEV(d)->pdev->dev, ##args)
 #define userpf_dbg(d, args...)                     \
 	xocl_dbg(&XDEV(d)->pdev->dev, ##args)
+#define userpf_info_once(d, args...)               \
+({                                                 \
+	 static bool __info_once __read_mostly;    \
+						   \
+	 if (!__info_once) {                       \
+		 __info_once = true;               \
+		 userpf_info(d, ##args);           \
+	 }                                         \
+ })
 
 #define xocl_get_root_dev(dev, root)		\
 	for (root = dev; root->bus && root->bus->self; root = root->bus->self)
@@ -219,5 +228,7 @@ int xocl_cu_map_addr(struct xocl_dev *xdev, u32 cu_idx,
 		     struct drm_file *filp, unsigned long size, u32 *addrp);
 u32 xocl_kds_live_clients(struct xocl_dev *xdev, pid_t **plist);
 int xocl_kds_update(struct xocl_dev *xdev, struct drm_xocl_kds kds_cfg);
+void xocl_kds_cus_enable(struct xocl_dev *xdev);
+void xocl_kds_cus_disable(struct xocl_dev *xdev);
 
 #endif

@@ -20,17 +20,21 @@
 #define XCL_DRIVER_DLL_EXPORT  // exporting xrt_device.h
 #define XRT_CORE_COMMON_SOURCE // in same dll as core_common
 
-#include "core/include/experimental/xrt_device.h"
-#include "core/include/experimental/xrt_aie.h"
+#include "core/include/xrt/xrt_device.h"
+#include "core/include/xrt/xrt_aie.h"
 
 #include "core/common/system.h"
 #include "core/common/device.h"
 #include "core/common/message.h"
 #include "core/common/sensor.h"
+#include "core/common/info_memory.h"
+#include "core/common/info_platform.h"
 #include "core/common/query_requests.h"
 
 #include "xclbin_int.h" // Non public xclbin APIs
 #include "native_profile.h"
+
+#include <boost/property_tree/json_parser.hpp>
 
 #include <map>
 #include <vector>
@@ -126,8 +130,10 @@ to_string(const xrt_core::device* device)
   return to_value<param, QueryRequestType>(device, [](const auto& q) { return QueryRequestType::to_string(q); });
 }
 
+// Return a json string conforming to ABI schema
+// ABI remains unused until we actually have a new schema  
 static std::string
-json_str(boost::property_tree::ptree pt) 
+json_str(const boost::property_tree::ptree& pt, const xrt::detail::abi&) 
 {
   std::stringstream ss;
   boost::property_tree::write_json(ss, pt);
@@ -248,7 +254,7 @@ get_xclbin_section(axlf_section_kind section, const uuid& uuid) const
 
 boost::any
 device::
-get_info(info::device param) const
+get_info(info::device param, const xrt::detail::abi& abi) const
 {
   switch (param) {
   case info::device::bdf :                    // std::string
@@ -284,17 +290,38 @@ get_info(info::device param) const
       (handle.get(), [](const auto& val) { return bool(val); });
   case info::device::offline :
     return query::raw<info::device::offline, xrt_core::query::is_offline>(handle.get());
-  case info::device::power_rails :            // std::string
-    return query::json_str(xrt_core::sensor::read_power_rails(handle.get()));
-  case info::device::thermals :               // std::string
-    return query::json_str(xrt_core::sensor::read_thermals(handle.get()));
-  case info::device::power_consumption :      // std::string
-    return query::json_str(xrt_core::sensor::read_power_consumption(handle.get()));
-  case info::device::fans :                   // std::string
-    return query::json_str(xrt_core::sensor::read_fans(handle.get()));
+  case info::device::electrical :            // std::string
+    return query::json_str(xrt_core::sensor::read_electrical(handle.get()), abi);
+  case info::device::thermal :               // std::string
+    return query::json_str(xrt_core::sensor::read_thermals(handle.get()), abi);
+  case info::device::mechanical :            // std::string
+    return query::json_str(xrt_core::sensor::read_mechanical(handle.get()), abi);
+  case info::device::memory :                // std::string
+    return query::json_str(xrt_core::memory::memory_topology(handle.get()), abi);
+  case info::device::platform :              // std::string
+    return query::json_str(xrt_core::platform::platform_info(handle.get()), abi);
+  case info::device::pcie_info :                  // std::string
+    return query::json_str(xrt_core::platform::pcie_info(handle.get()), abi);
+  case info::device::dynamic_regions :         // std::string
+    return query::json_str(xrt_core::memory::xclbin_info(handle.get()), abi);
+  case info::device::host :                   // std::string
+    boost::property_tree::ptree pt;
+    xrt_core::get_xrt_build_info(pt);
+    return query::json_str(pt, abi);
   }
 
   throw std::runtime_error("internal error: unreachable");
+}
+
+// Deprecated but left for support of old existing binaries in the
+// field that reference this symbol. Unused since xrt-2.12.x
+boost::any
+device::
+get_info(info::device param) const
+{
+  // Old binaries call get_info without ABI and by
+  // default will use current ABI version
+  return get_info(param, xrt::detail::abi{});
 }
 
 } // xrt
@@ -309,8 +336,16 @@ void
 device::
 reset_array()
 {
-  auto handle = get_handle();
-  handle->reset_aie();
+  auto core_device = get_handle();
+  core_device->reset_aie();
+}
+
+void
+device::
+open_context(xrt::aie::device::access_mode am)
+{
+  auto core_device = get_handle();
+  core_device->open_aie_context(am);
 }
 
 }} // namespace aie, xrt

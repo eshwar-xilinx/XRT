@@ -28,11 +28,11 @@ def runKernel(opt):
     xbin = pyxrt.xclbin(opt.bitstreamFile)
     uuid = d.load_xclbin(xbin)
 
-    iplist = xbin.get_ips()
+    kernellist = xbin.get_kernels()
 
     rule = re.compile("hello*")
-    ip = list(filter(lambda val: rule.match(val.get_name()), iplist))[0]
-    hello = pyxrt.kernel(d, uuid, ip.get_name(), pyxrt.kernel.shared)
+    kernel = list(filter(lambda val: rule.match(val.get_name()), kernellist))[0]
+    hello = pyxrt.kernel(d, uuid, kernel.get_name(), pyxrt.kernel.shared)
 
     zeros = bytearray(opt.DATA_SIZE)
     boHandle1 = pyxrt.bo(d, opt.DATA_SIZE, pyxrt.bo.normal, hello.group_id(0))
@@ -54,8 +54,8 @@ def runKernel(opt):
     run2 = hello(boHandle2)
 
     print("Now wait for the kernels to finish using xrtRunWait()")
-    state1 = run1.wait(5)
-    state2 = run2.wait(5)
+    state1 = run1.wait()
+    state2 = run2.wait()
 
     print("Get the output data produced by the 2 kernel runs from the device")
     boHandle1.sync(pyxrt.xclBOSyncDirection.XCL_BO_SYNC_BO_FROM_DEVICE, opt.DATA_SIZE, 0)

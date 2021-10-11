@@ -40,6 +40,7 @@ namespace po = boost::program_options;
 #include "tools/common/ReportFirewall.h"
 #include "tools/common/ReportMechanical.h"
 #include "tools/common/ReportMailbox.h"
+#include "tools/common/ReportCmcStatus.h"
 #include "ReportPlatform.h"
 
 // Note: Please insert the reports in the order to be displayed (current alphabetical)
@@ -51,7 +52,8 @@ static const ReportCollection fullReportCollection = {
   #ifdef ENABLE_NATIVE_SUBCMDS_AND_REPORTS
     std::make_shared<ReportMechanical>(),
     std::make_shared<ReportFirewall>(),
-    std::make_shared<ReportMailbox>()
+    std::make_shared<ReportMailbox>(),
+    std::make_shared<ReportCmcStatus>()
   #endif
 };
 
@@ -131,7 +133,7 @@ SubCmdExamine::execute(const SubCmdOptions& _options) const
 
   // Determine default values
   if (devices.size() == 0)
-    devices.push_back("all");
+    devices.push_back("_all_");
 
   if (reportNames.size() == 0)
     reportNames.push_back("host");

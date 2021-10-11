@@ -87,6 +87,7 @@ xclDeviceHandle xclOpen(unsigned deviceIndex, const char *logfileName, xclVerbos
   {
     handle = new xclcpuemhal2::CpuemShim(deviceIndex,info,DDRBankList,false,false,fRomHeader);
     bDefaultDevice = true;
+    xclcpuemhal2::devices[deviceIndex++] = handle;
   }
 
   if (!xclcpuemhal2::CpuemShim::handleCheck(handle)) {
@@ -378,7 +379,7 @@ unsigned xclProbe()
     return deviceIndex;
   }
   std::vector<std::tuple<xclDeviceInfo2,std::list<xclemulation::DDRBank> ,bool, bool, FeatureRomHeader> > devicesInfo;
-  getDevicesInfo(devicesInfo);
+  xclemulation::getDevicesInfo(devicesInfo);
 
   if(devicesInfo.size() == 0)
     return 1;
@@ -584,6 +585,12 @@ xclUnmgdPwrite(xclDeviceHandle handle, unsigned int flags, const void *buf, size
 
 int
 xclP2pEnable(xclDeviceHandle handle, bool enable, bool force)
+{
+  return -ENOSYS;
+}
+
+int
+xclCmaEnable(xclDeviceHandle handle, bool enable, uint64_t force)
 {
   return -ENOSYS;
 }
@@ -813,7 +820,7 @@ xclGraphWait(xclGraphHandle gh, uint64_t cycle)
     if (gh) {
       auto ghPtr = (xclcpuemhal2::GraphType*)gh;
       auto drv = (ghPtr) ? ghPtr->getDeviceHandle() : nullptr;
-      return drv ? drv->xrtGraphWait(gh) : -1;
+      return drv ? (cycle ? drv->xrtGraphTimedWait(gh,cycle) : drv->xrtGraphWait(gh) ): -1;
     }
     return -1;
   }
@@ -836,7 +843,22 @@ xclGraphSuspend(xclGraphHandle gh)
 int
 xclGraphResume(xclGraphHandle gh)
 {
-  return 0;
+  try {
+    if (gh) {
+      auto ghPtr = (xclcpuemhal2::GraphType*)gh;
+      auto drv = (ghPtr) ? ghPtr->getDeviceHandle() : nullptr;
+      return drv ? drv->xrtGraphResume(gh) : -1;
+    }
+    return -1;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return -1;
+  }
 }
 
 int
@@ -846,7 +868,7 @@ xclGraphEnd(xclGraphHandle gh, uint64_t cycle)
     if (gh) {
       auto ghPtr = (xclcpuemhal2::GraphType*)gh;
       auto drv = (ghPtr) ? ghPtr->getDeviceHandle() : nullptr;
-      return drv ? drv->xrtGraphEnd(gh) : -1;
+      return drv ? (cycle ? drv->xrtGraphTimedEnd(gh, cycle) : drv->xrtGraphEnd(gh) ) : -1;
     }
     return -1;
   }

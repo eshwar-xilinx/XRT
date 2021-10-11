@@ -425,11 +425,23 @@ static struct xocl_subdev_map subdev_map[] = {
 		.max_level = XOCL_SUBDEV_LEVEL_PRP,
 	},
 	{
-		.id = XOCL_SUBDEV_ERT_USER,
-		.dev_name = XOCL_ERT_USER,
+		.id = XOCL_SUBDEV_CFG_GPIO,
+		.dev_name = XOCL_CFG_GPIO,
+		.res_array = (struct xocl_subdev_res[]) {
+			{.res_name = NODE_ERT_CFG_GPIO},
+			{NULL},
+		},
+		.required_ip = 1,
+		.flags = XOCL_SUBDEV_MAP_USERPF_ONLY,
+		.build_priv_data = NULL,
+		.devinfo_cb = NULL,
+		.max_level = XOCL_SUBDEV_LEVEL_PRP,
+ 	},
+	{
+		.id = XOCL_SUBDEV_COMMAND_QUEUE,
+		.dev_name = XOCL_COMMAND_QUEUE,
 		.res_array = (struct xocl_subdev_res[]) {
 			{.res_name = NODE_ERT_CQ_USER, .regmap_name = PROP_ERT_CQ},
-			{.res_name = NODE_ERT_CFG_GPIO},
 			{.res_name = NODE_ERT_CQ_USER, .regmap_name = PROP_ERT_LEGACY},
 			{NULL},
 		},
@@ -721,6 +733,21 @@ static struct xocl_subdev_map subdev_map[] = {
 		.max_level = XOCL_SUBDEV_LEVEL_PRP,
 	},
 	{
+		.id = XOCL_SUBDEV_XGQ,
+		.dev_name = XOCL_XGQ,
+		.res_array = (struct xocl_subdev_res[]) {
+			{.res_name = NODE_XGQ_SQ_BASE},
+			{.res_name = NODE_XGQ_CQ_BASE},
+			{.res_name = NODE_XGQ_RING_BASE},
+			{NULL},
+		},
+		.required_ip = 1,
+		.flags = 0,
+		.build_priv_data = NULL,
+		.devinfo_cb = NULL,
+		.max_level = XOCL_SUBDEV_LEVEL_PRP,
+	},
+	{
 		.id = XOCL_SUBDEV_XFER_VERSAL,
 		.dev_name = XOCL_XFER_VERSAL,
 		.res_array = (struct xocl_subdev_res[]) {
@@ -898,7 +925,8 @@ static bool get_userpf_info(void *fdt, int node, u32 pf)
 	offset = fdt_parent_offset(fdt, node);
 	val = fdt_get_name(fdt, offset, NULL);
 
-	if (!val || strncmp(val, NODE_ENDPOINTS, strlen(NODE_PROPERTIES)))
+	if (!val || (strncmp(val, NODE_ENDPOINTS, strlen(NODE_ENDPOINTS))
+			&& strncmp(val, NODE_BARS, strlen(NODE_BARS))))
 		return true;
 
 	do {
@@ -1412,7 +1440,6 @@ static void xocl_pack_subdev(xdev_handle_t xdev_hdl, struct xocl_subdev *subdev)
 
 	BUG_ON(!subdev || !subdev->res || !subdev->res_name || !subdev->bar_idx);
 
-		xocl_xdev_info(xdev_hdl, "####res num %d", subdev->info.num_res);
 	res = kzalloc(sizeof (struct resource)
 		* subdev->info.num_res, GFP_KERNEL);
 	res_name = kzalloc(XOCL_SUBDEV_RES_NAME_LEN
@@ -1447,6 +1474,80 @@ static void xocl_pack_subdev(xdev_handle_t xdev_hdl, struct xocl_subdev *subdev)
 	for (i = 0; i < subdev->info.num_res; i++)
 		subdev->info.res[i].name = subdev->res_name +
 			i * XOCL_SUBDEV_RES_NAME_LEN;
+}
+
+static int xocl_fdt_get_pci_addr(xdev_handle_t xdev_hdl)
+{
+        struct xocl_dev_core    *core = XDEV(xdev_hdl);
+        int offset;
+        const u32* bar;
+        const u32* pfn;
+        const u64* io_off;
+        u32 pf, bar_idx;
+        int ret = 0, count = 0;
+
+#if PF == MGMTPF
+        pf = 0;
+#else
+        pf = 1;
+#endif
+
+        if (!core->fdt_blob) {
+                xocl_xdev_err(xdev_hdl, "fdt blob is empty");
+                return -EINVAL;
+        }
+
+        offset = fdt_path_offset(core->fdt_blob, "/" NODE_PCIE "/" NODE_BARS);
+        if (offset < 0) {
+                xocl_xdev_dbg(xdev_hdl, "pcie bars nodes are not present in firmware data");
+                return -EINVAL;
+        }
+
+        core->bars = kmalloc(sizeof(struct pci_bars) * NUM_PCI_BARS, GFP_KERNEL);
+        if (!core->bars) {
+                ret = -ENOMEM;
+                goto done;
+        }
+        memset(core->bars, 0, sizeof(struct pci_bars) * NUM_PCI_BARS);
+
+        for (offset = fdt_first_subnode(core->fdt_blob, offset);
+                offset >= 0;
+                offset = fdt_next_subnode(core->fdt_blob, offset)) {
+
+                pfn = fdt_getprop(core->fdt_blob, offset, PROP_PF_NUM, NULL);
+                if (!pfn) {
+                        xocl_xdev_err(xdev_hdl, "failed to get physical_function of pci node");
+                        ret = -EINVAL;
+                        goto done;
+                }
+                if (be32_to_cpu(*pfn) != pf)
+                        continue;
+
+                bar = fdt_getprop(core->fdt_blob, offset, PROP_BAR_IDX, NULL);
+                if (!bar) {
+                        xocl_xdev_err(xdev_hdl, "failed to get bar idx");
+                        ret = -EINVAL;
+                        goto done;
+                }
+                io_off = fdt_getprop(core->fdt_blob, offset, PROP_IO_OFFSET, NULL);
+                if (!io_off) {
+                        xocl_xdev_err(xdev_hdl, "failed to get offset, range of pci node");
+                        ret = -EINVAL;
+                        goto done;
+                }
+                bar_idx = be32_to_cpu(*bar);
+                core->bars[bar_idx].base_addr = be64_to_cpu(io_off[0]);
+                core->bars[bar_idx].range = be64_to_cpu(io_off[1]);
+                count++;
+        }
+
+done:
+	if(ret || count == 0) {
+		kfree(core->bars);
+		core->bars = NULL;
+		return ret;
+	}
+        return 0;
 }
 
 int xocl_fdt_parse_blob(xdev_handle_t xdev_hdl, char *blob, u32 blob_sz,
@@ -1676,16 +1777,26 @@ int xocl_fdt_blob_input(xdev_handle_t xdev_hdl, char *blob, u32 blob_sz,
 	ret = xocl_fdt_parse_blob(xdev_hdl, output_blob, len, &subdevs);
 	if (ret < 0)
 		goto failed;
-	core->dyn_subdev_num = ret;
 
 	if (core->fdt_blob)
 		vfree(core->fdt_blob);
 
-	if (core->dyn_subdev_store)
-		vfree(core->dyn_subdev_store);
+	if (core->bars)
+		kfree(core->bars);
+
+	if (core->dyn_subdev_store) {
+		for (i = 0; i < core->dyn_subdev_num; i++)
+			xocl_subdev_dyn_free(core->dyn_subdev_store + i);
+		kfree(core->dyn_subdev_store);
+	}
+	core->dyn_subdev_num = ret;
 
 	core->fdt_blob = output_blob;
 	core->fdt_blob_sz = fdt_totalsize(output_blob);
+
+	/* get pci bar mappings of CPM */
+	xocl_fdt_get_pci_addr(core);
+
 	core->dyn_subdev_store = subdevs;
 
 	for (i = 0; i < core->dyn_subdev_num; i++)

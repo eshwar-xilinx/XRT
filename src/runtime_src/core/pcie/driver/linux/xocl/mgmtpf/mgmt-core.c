@@ -504,6 +504,13 @@ static void check_pcie_link_toggle(struct xclmgmt_dev *lro, int clear)
 }
 
 
+static int xocl_check_firewall(struct xclmgmt_dev *lro, int *level)
+{
+	return (AF_CB(lro, check_firewall)) ?
+		xocl_af_check(lro, level) :
+		xocl_xgq_check_firewall(lro);
+}
+
 static int health_check_cb(void *data)
 {
 	struct xclmgmt_dev *lro = (struct xclmgmt_dev *)data;
@@ -538,7 +545,7 @@ static int health_check_cb(void *data)
 	 * it possibly still has chance to read clock and
 	 * sensor information etc.
 	 */
-	tripped = xocl_af_check(lro, NULL);
+	tripped = xocl_check_firewall(lro, NULL);
 
 reset:
 	if (latched || tripped) {
@@ -888,6 +895,7 @@ void xclmgmt_mailbox_srv(void *arg, void *data, size_t len,
 	case XCL_MAILBOX_REQ_LOAD_XCLBIN: {
 		uint64_t xclbin_len = 0;
 		struct axlf *xclbin = (struct axlf *)req->data;
+		bool fetch = (atomic_read(&lro->config_xclbin_change) == 1);
 
 		if (payload_len < sizeof(*xclbin)) {
 			mgmt_err(lro, "peer request dropped, wrong size\n");
@@ -898,7 +906,20 @@ void xclmgmt_mailbox_srv(void *arg, void *data, size_t len,
 			mgmt_err(lro, "peer request dropped, wrong size\n");
 			break;
 		}
-		ret = xocl_xclbin_download(lro, xclbin);
+
+		/*
+		 * User may transfer a fake xclbin which doesn't have bitstream
+		 * In this case, 'config_xclbin_change' has to be set, and we
+		 * will go to fetch the real xclbin.
+		 * Note:
+		 * 1. it is up to the admin to put authentificated xclbins at
+		 *    predefined location
+		 */
+		if (fetch)
+			ret = xclmgmt_xclbin_fetch_and_download(lro, xclbin);
+		else
+			ret = xocl_xclbin_download(lro, xclbin);
+
 		(void) xocl_peer_response(lro, req->req, msgid, &ret,
 			sizeof(ret));
 		break;
@@ -1121,8 +1142,12 @@ static void xclmgmt_extended_probe(struct xclmgmt_dev *lro)
 	 * like if versal has vesc, then it is a 2.0 shell. We can add the following
 	 * condition.
 	 */
+
+	/* XOCL_DSAFLAG_CUSTOM_DTB is used for non-VSEC platforms which still wanted to
+	 * use partition metadata to discover resources
+	 */
 	if ((dev_info->flags & (XOCL_DSAFLAG_VERSAL | XOCL_DSAFLAG_MPSOC)) &&
-	    xocl_subdev_is_vsec(lro))
+	    (xocl_subdev_is_vsec(lro) || dev_info->flags & XOCL_DSAFLAG_CUSTOM_DTB))
 		ret = -ENODEV;
 
 	if (!ret) {
@@ -1317,6 +1342,7 @@ static int xclmgmt_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if ((dev_info->flags & XOCL_DSAFLAG_MFG) != 0) {
 		(void) xocl_subdev_create_all(lro);
+		xocl_drvinst_set_offline(lro, false);
 		return 0;
 	}
 
@@ -1425,6 +1451,8 @@ static void xclmgmt_remove(struct pci_dev *pdev)
 		vfree(lro->userpf_blob);
 	if (lro->core.blp_blob)
 		vfree(lro->core.blp_blob);
+	if (lro->core.bars)
+		kfree(lro->core.bars);
 
 	if (lro->preload_xclbin)
 		vfree(lro->preload_xclbin);
@@ -1499,6 +1527,7 @@ static int (*drv_reg_funcs[])(void) __initdata = {
 	xocl_init_pmc,
 	xocl_init_icap_controller,
 	xocl_init_pcie_firewall,
+	xocl_init_xgq,
 };
 
 static void (*drv_unreg_funcs[])(void) = {
@@ -1533,6 +1562,7 @@ static void (*drv_unreg_funcs[])(void) = {
 	xocl_fini_pmc,
 	xocl_fini_icap_controller,
 	xocl_fini_pcie_firewall,
+	xocl_fini_xgq,
 };
 
 static int __init xclmgmt_init(void)

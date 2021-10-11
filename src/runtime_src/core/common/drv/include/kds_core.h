@@ -2,7 +2,7 @@
 /*
  * Xilinx Kernel Driver Scheduler
  *
- * Copyright (C) 2020 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2020-2021 Xilinx, Inc. All rights reserved.
  *
  * Authors: min.ma@xilinx.com
  *
@@ -58,11 +58,13 @@ struct kds_ctx_info {
  * Let's see if we can unify them later.
  */
 struct kds_scu_mgmt {
+	struct xrt_cu		 *xcus[MAX_CUS];
 	struct mutex		  lock;
 	int			  num_cus;
 	u32			  status[MAX_CUS];
-	u32			  usage[MAX_CUS];
 	char			  name[MAX_CUS][32];
+	u32			  cu_refs[MAX_CUS];
+	struct cu_stats __percpu *cu_stats;
 };
 
 /* the MSB of cu_refs is used for exclusive flag */
@@ -96,6 +98,7 @@ struct kds_ert {
 	void (* submit)(struct kds_ert *ert, struct kds_command *xcmd);
 	void (* abort)(struct kds_ert *ert, struct kds_client *client, int cu_idx);
 	bool (* abort_done)(struct kds_ert *ert, struct kds_client *client, int cu_idx);
+	bool (* abort_sync)(struct kds_ert *ert, struct kds_client *client, int cu_idx);
 };
 
 /* Fast adapter memory info */
@@ -121,6 +124,7 @@ struct cmdmem_info {
  * @ert_disable: remote scheduler is disabled or not
  * @cu_intr_cap: capbility of CU interrupt support
  * @cu_intr: CU or ERT interrupt. 1 for CU, 0 for ERT.
+ * @anon_client: driver own kds client used with driver generated command
  */
 struct kds_sched {
 	struct list_head	clients;
@@ -136,6 +140,7 @@ struct kds_sched {
 	u32			cu_intr;
 	struct cmdmem_info	cmdmem;
 	struct completion	comp;
+	struct kds_client      *anon_client;
 };
 
 int kds_init_sched(struct kds_sched *kds);
@@ -146,12 +151,14 @@ int kds_fini_ert(struct kds_sched *kds);
 void kds_fini_client(struct kds_sched *kds, struct kds_client *client);
 void kds_reset(struct kds_sched *kds);
 int kds_cfg_update(struct kds_sched *kds);
+void kds_cus_irq_enable(struct kds_sched *kds, bool enable);
 int is_bad_state(struct kds_sched *kds);
 u32 kds_live_clients(struct kds_sched *kds, pid_t **plist);
 u32 kds_live_clients_nolock(struct kds_sched *kds, pid_t **plist);
-struct kds_client *kds_get_client(struct kds_sched *kds, pid_t pid);
 int kds_add_cu(struct kds_sched *kds, struct xrt_cu *xcu);
 int kds_del_cu(struct kds_sched *kds, struct xrt_cu *xcu);
+int kds_add_scu(struct kds_sched *kds, struct xrt_cu *xcu);
+int kds_del_scu(struct kds_sched *kds, struct xrt_cu *xcu);
 int kds_get_cu_total(struct kds_sched *kds);
 u32 kds_get_cu_addr(struct kds_sched *kds, int idx);
 u32 kds_get_cu_proto(struct kds_sched *kds, int idx);
@@ -160,7 +167,7 @@ int kds_add_context(struct kds_sched *kds, struct kds_client *client,
 		    struct kds_ctx_info *info);
 int kds_del_context(struct kds_sched *kds, struct kds_client *client,
 		    struct kds_ctx_info *info);
-int kds_open_ucu(struct kds_sched *kds, struct kds_client *client, int cu_idx);
+int kds_open_ucu(struct kds_sched *kds, struct kds_client *client, u32 cu_idx);
 int kds_map_cu_addr(struct kds_sched *kds, struct kds_client *client,
 		    int idx, unsigned long size, u32 *addrp);
 int kds_add_command(struct kds_sched *kds, struct kds_command *xcmd);

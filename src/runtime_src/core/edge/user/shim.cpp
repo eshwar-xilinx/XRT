@@ -45,8 +45,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#ifndef __HWEM__
 #include "plugin/xdp/hal_profile.h"
+#ifndef __HWEM__
 #include "plugin/xdp/hal_api_interface.h"
 #include "plugin/xdp/hal_device_offload.h"
 
@@ -116,15 +116,16 @@ shim(unsigned index)
   mDev = zynq_device::get_dev();
 }
 
-#ifndef __HWEM__
 shim::
 ~shim()
 {
   xclLog(XRT_INFO, "%s", __func__);
 
+#ifndef __HWEM__
 //  xdphal::finish_flush_device(handle) ;
   xdp::aie::finish_flush_device(this) ;
   xdp::aie::ctr::end_poll(this);
+#endif
 
   // The BO cache unmaps and releases all execbo, but this must
   // be done before the device (mKernelFD) is closed.
@@ -139,7 +140,6 @@ shim::
       (void) munmap(p, mCuMapSize);
   }
 }
-#endif
 
 // This function is for internal mapping CU and debug IP only.
 // For the future, this could be used to support any address aperture.
@@ -476,7 +476,6 @@ xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, size_t size,
 }
 
 
-#ifndef __HWEM__
 int
 shim::
 xclLoadXclBin(const xclBin *buffer)
@@ -490,7 +489,6 @@ xclLoadXclBin(const xclBin *buffer)
   xclLog(XRT_INFO, "%s: return %d", __func__, ret);
   return ret;
 }
-#endif
 
 int
 shim::
@@ -510,10 +508,12 @@ xclLoadAxlf(const axlf *buffer)
    * If platform is a PR-platform, but v++ generated a full bitstream (using
    * some v++ param).  User need to add enable_pr=false in xrt.ini.
    */
+#ifndef __HWEM__
   auto is_pr_platform = (buffer->m_header.m_mode == XCLBIN_PR ) ? true : false;
   auto is_flat_platform = (buffer->m_header.m_mode == XCLBIN_FLAT ) ? true : false;
   auto is_pr_enabled = xrt_core::config::get_enable_pr(); //default value is true
   auto is_flat_enabled = xrt_core::config::get_enable_flat(); //default value is false
+  auto force_program = xrt_core::config::get_force_program_xclbin(); //default value is false
 
   if (is_pr_platform && is_pr_enabled)
     flags = DRM_ZOCL_PLATFORM_PR;
@@ -526,6 +526,11 @@ xclLoadAxlf(const axlf *buffer)
    */
   else if (is_flat_platform && is_flat_enabled)
     flags = DRM_ZOCL_PLATFORM_FLAT;
+
+  if (force_program) {
+    flags = flags | DRM_ZOCL_FORCE_PROGRAM;
+  }
+#endif
 
     drm_zocl_axlf axlf_obj = {
       .za_xclbin_ptr = const_cast<axlf *>(buffer),
@@ -1585,11 +1590,10 @@ setAIEAccessMode(xrt::aie::access_mode am)
 
 } // end namespace ZYNQ
 
-#ifndef __HWEM__
 unsigned
 xclProbe()
 {
-  PROBE_CB;
+  return xdp::hal::profiling_wrapper("xclProbe", [] {
 
   int fd = open("/dev/dri/renderD128", O_RDWR);
   if (fd < 0) {
@@ -1616,30 +1620,29 @@ xclProbe()
   result = std::strncmp(version.name, "zocl", 4);
   close(fd);
   return (result == 0) ? 1 : 0;
+  });
 }
-#endif
 
 xclDeviceHandle
 xclOpen(unsigned deviceIndex, const char*, xclVerbosityLevel)
 {
+  return xdp::hal::profiling_wrapper("xclOpen",
+  [deviceIndex] {
+
   try {
     //std::cout << "xclOpen called" << std::endl;
     if (deviceIndex >= xclProbe()) {
       xrt_core::message::send(xrt_core::message::severity_level::info, "XRT",
                        std::string("Cannot find index " + std::to_string(deviceIndex) + " \n"));
-      return nullptr;
+      return static_cast<xclDeviceHandle>(nullptr);
     }
-
-#ifndef __HWEM__
-    OPEN_CB;
-#endif
 
     auto handle = new ZYNQ::shim(deviceIndex);
     if (!ZYNQ::shim::handleCheck(handle)) {
       delete handle;
       handle = XRT_NULL_HANDLE;
     }
-    return handle;
+    return static_cast<xclDeviceHandle>(handle);
   }
   catch (const xrt_core::error& ex) {
     xrt_core::send_exception_message(ex.what());
@@ -1648,51 +1651,51 @@ xclOpen(unsigned deviceIndex, const char*, xclVerbosityLevel)
     xrt_core::send_exception_message(ex.what());
   }
 
-  return XRT_NULL_HANDLE;
+  return static_cast<xclDeviceHandle>(XRT_NULL_HANDLE);
 
+  }) ;
 }
 
 void
 xclClose(xclDeviceHandle handle)
 {
-#ifndef __HWEM__
-  CLOSE_CB;
-#endif
-
+  xdp::hal::profiling_wrapper("xclClose", [handle] {
   //std::cout << "xclClose called" << std::endl;
   if (ZYNQ::shim::handleCheck(handle)) {
     delete ((ZYNQ::shim *) handle);
   }
+  }) ;
 }
 
 unsigned int
 xclAllocBO(xclDeviceHandle handle, size_t size, int unused, unsigned flags)
 {
-#ifndef __HWEM__
-  ALLOC_BO_CB;
-#endif
+  return xdp::hal::profiling_wrapper("xclAllocBO", [handle, size, unused, flags] {
+
   //std::cout << "xclAllocBO called " << std::endl;
   //std::cout << "xclAllocBO size:  "  << size << std::endl;
   //std::cout << "xclAllocBO handle " << handle << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
-    return -EINVAL;
+    return static_cast<unsigned int>(-EINVAL);
   //std::cout << "xclAllocBO handle check passed" << std::endl;
   return drv->xclAllocBO(size, unused, flags);
+  }) ;
 }
 
 unsigned int
 xclAllocUserPtrBO(xclDeviceHandle handle, void *userptr, size_t size, unsigned flags)
 {
-#ifndef __HWEM__
-  ALLOC_USERPTR_BO_CB;
-#endif
+  return xdp::hal::profiling_wrapper("xclAllocUserPtrBO",
+  [handle, userptr, size, flags] {
+
   //std::cout << "xclAllocUserPtrBO called.. " << handle << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
-    return -EINVAL;
+    return static_cast<unsigned int>(-EINVAL);
   return drv->xclAllocUserPtrBO(userptr, size, flags);
   //return 0xffffffff;
+  }) ;
 }
 
 unsigned int
@@ -1708,58 +1711,55 @@ xclGetHostBO(xclDeviceHandle handle, uint64_t paddr, size_t size)
 void
 xclFreeBO(xclDeviceHandle handle, unsigned int boHandle)
 {
-#ifndef __HWEM__
-  FREE_BO_CB;
-#endif
+  xdp::hal::profiling_wrapper("xclFreeBO", [handle, boHandle] {
   //std::cout << "xclFreeBO called" << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return;
   drv->xclFreeBO(boHandle);
+  }) ;
 }
 
 size_t
 xclWriteBO(xclDeviceHandle handle, unsigned int boHandle, const void *src,
            size_t size, size_t seek)
 {
-#ifndef __HWEM__
-  WRITE_BO_CB;
-#endif
+  return xdp::hal::buffer_transfer_profiling_wrapper("xclWriteBO", size, true,
+  [handle, boHandle, src, size, seek] {
 
   //std::cout << "xclWriteBO called" << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclWriteBO(boHandle, src, size, seek);
+  }) ;
 }
 
 size_t
 xclReadBO(xclDeviceHandle handle, unsigned int boHandle, void *dst,
           size_t size, size_t skip)
 {
-#ifndef __HWEM__
-  READ_BO_CB;
-#endif
+  return xdp::hal::buffer_transfer_profiling_wrapper("xclReadBO", size, false,
+  [handle, boHandle, dst, size, skip] {
 
   //std::cout << "xclReadBO called" << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclReadBO(boHandle, dst, size, skip);
+  }) ;
 }
 
 void *
 xclMapBO(xclDeviceHandle handle, unsigned int boHandle, bool write)
 {
-#ifndef __HWEM__
-  MAP_BO_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclMapBO", [handle, boHandle, write] {
   //std::cout << "xclMapBO called" << std::endl;
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
-    return NULL;
+    return static_cast<void*>(nullptr);
   return drv->xclMapBO(boHandle, write);
+  } );
 }
 
 int
@@ -1776,28 +1776,29 @@ int
 xclSyncBO(xclDeviceHandle handle, unsigned int boHandle, xclBOSyncDirection dir,
           size_t size, size_t offset)
 {
-#ifndef __HWEM__
-  SYNC_BO_CB;
-#endif
+  return xdp::hal::buffer_transfer_profiling_wrapper("xclSyncBO", size,
+						     (dir == XCL_BO_SYNC_BO_TO_DEVICE),
+  [handle, boHandle, dir, size, offset] {
 
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclSyncBO(boHandle, dir, size, offset);
+  }) ;
 }
 
 int
 xclCopyBO(xclDeviceHandle handle, unsigned int dst_boHandle,
           unsigned int src_boHandle, size_t size, size_t dst_offset, size_t src_offset)
 {
-#ifndef __HWEM__
-  COPY_BO_CB;
-#endif
+  return xdp::hal::profiling_wrapper("xclCopyBO",
+  [handle, dst_boHandle, src_boHandle, size, dst_offset, src_offset] {
 
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclCopyBO(dst_boHandle, src_boHandle, size, dst_offset, src_offset);
+  }) ;
 }
 
 int
@@ -1823,9 +1824,7 @@ xclImportBO(xclDeviceHandle handle, int fd, unsigned flags)
 static int
 xclLoadXclBinImpl(xclDeviceHandle handle, const xclBin *buffer, bool meta)
 {
-#ifndef __HWEM__
-  LOAD_XCLBIN_CB ;
-#endif
+  return xdp::hal::profiling_wrapper("xclLoadXclbin", [handle, buffer, meta] {
 
   try {
     ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
@@ -1891,6 +1890,8 @@ xclLoadXclBinImpl(xclDeviceHandle handle, const xclBin *buffer, bool meta)
     xrt_core::send_exception_message(ex.what());
     return 1;
   }
+
+  }) ;
 }
 
 int
@@ -1908,27 +1909,25 @@ xclLoadXclBin(xclDeviceHandle handle, const xclBin *buffer)
 size_t
 xclWrite(xclDeviceHandle handle, xclAddressSpace space, uint64_t offset, const void *hostBuf, size_t size)
 {
-#ifndef __HWEM__
-  WRITE_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclWrite",
+  [handle, space, offset, hostBuf, size] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
-    return -EINVAL;
+    return static_cast<size_t>(-EINVAL);
   return drv->xclWrite(space, offset, hostBuf, size);
+  }) ;
 }
 
 size_t
 xclRead(xclDeviceHandle handle, xclAddressSpace space, uint64_t offset, void *hostBuf, size_t size)
 {
-#ifndef __HWEM__
-  READ_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclRead",
+  [handle, space, offset, hostBuf, size] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
-    return -EINVAL;
+    return static_cast<size_t>(-EINVAL);
   return drv->xclRead(space, offset, hostBuf, size);
+  }) ;
 }
 
 int
@@ -1943,14 +1942,13 @@ xclGetDeviceInfo2(xclDeviceHandle handle, xclDeviceInfo2 *info)
 int
 xclGetBOProperties(xclDeviceHandle handle, unsigned int boHandle, xclBOProperties *properties)
 {
-#ifndef __HWEM__
-  GET_BO_PROP_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclGetBOProperties",
+  [handle, boHandle, properties] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
-  return drv->xclGetBOProperties(boHandle, properties);
+  return static_cast<int>(drv->xclGetBOProperties(boHandle, properties));
+  }) ;
 }
 
 unsigned int
@@ -1962,27 +1960,24 @@ xclVersion ()
 int
 xclExecBuf(xclDeviceHandle handle, unsigned int cmdBO)
 {
-#ifndef __HWEM__
-  EXEC_BUF_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclExecBuf", [handle, cmdBO] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclExecBuf(cmdBO) ;
+  }) ;
 }
 
 int
 xclExecWait(xclDeviceHandle handle, int timeoutMilliSec)
 {
-#ifndef __HWEM__
-  EXEC_WAIT_CB;
-#endif
+  return xdp::hal::profiling_wrapper("xclExecWait", [handle, timeoutMilliSec] {
 
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return -EINVAL;
   return drv->xclExecWait(timeoutMilliSec);
+  }) ;
 }
 
 uint
@@ -2110,24 +2105,22 @@ xclSKReport(xclDeviceHandle handle, uint32_t cu_idx, xrt_scu_state state)
 int
 xclOpenContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
-#ifndef __HWEM__
-  OPEN_CONTEXT_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclOpenContext",
+  [handle, xclbinId, ipIndex, shared] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
 
   return drv ? drv->xclOpenContext(xclbinId, ipIndex, shared) : -EINVAL;
+  }) ;
 }
 
 int
 xclCloseContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned ipIndex)
 {
-#ifndef __HWEM__
-  CLOSE_CONTEXT_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclCloseContext",
+  [handle, xclbinId, ipIndex] {
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   return drv ? drv->xclCloseContext(xclbinId, ipIndex) : -EINVAL;
+  }) ;
 }
 
 size_t
@@ -2193,21 +2186,17 @@ xclReClock2(xclDeviceHandle handle, unsigned short region, const unsigned short 
 int
 xclLockDevice(xclDeviceHandle handle)
 {
-#ifndef __HWEM__
-  LOCK_DEVICE_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclLockDevice", [] {
   return 0;
+  }) ;
 }
 
 int
 xclUnlockDevice(xclDeviceHandle handle)
 {
-#ifndef __HWEM__
-  UNLOCK_DEVICE_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclUnlockDevice", [] {
   return 0;
+  }) ;
 }
 
 int
@@ -2244,22 +2233,18 @@ ssize_t
 xclUnmgdPread(xclDeviceHandle handle, unsigned flags, void *buf,
               size_t count, uint64_t offset)
 {
-#ifndef __HWEM__
-  UNMGD_PREAD_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclUnmgdPread", [] {
   return -ENOSYS;
+  }) ;
 }
 
 ssize_t
 xclUnmgdPwrite(xclDeviceHandle handle, unsigned flags, const void *buf,
                size_t count, uint64_t offset)
 {
-#ifndef __HWEM__
-  UNMGD_PWRITE_CB;
-#endif
-
+  return xdp::hal::profiling_wrapper("xclUnmgdPwrite", [] {
   return -ENOSYS;
+  }) ;
 }
 
 int
@@ -2443,6 +2428,12 @@ int
 xclP2pEnable(xclDeviceHandle handle, bool enable, bool force)
 {
   return 1; // -ENOSYS;
+}
+
+int
+xclCmaEnable(xclDeviceHandle handle, bool enable, uint64_t force)
+{
+  return -ENOSYS;
 }
 
 int

@@ -52,6 +52,7 @@ struct xocl_cma_memory {
 struct xocl_cma_bank {
 	uint64_t		entry_sz;
 	uint64_t		entry_num;
+	uint64_t 		*phys_addrs;
 	struct xocl_cma_memory	cma_mem[1];
 };
 
@@ -157,5 +158,9 @@ static inline struct drm_xocl_bo *to_xocl_bo(struct drm_gem_object *bo)
 int xocl_init_unmgd(struct drm_xocl_unmgd *unmgd, uint64_t data_ptr,
 		        uint64_t size, u32 write);
 void xocl_finish_unmgd(struct drm_xocl_unmgd *unmgd);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+extern const struct drm_gem_object_funcs xocl_gem_object_funcs;
+#endif
 
 #endif

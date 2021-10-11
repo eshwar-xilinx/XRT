@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016-2020 Xilinx, Inc. All rights reserved.
+# Copyright (C) 2016-2021 Xilinx, Inc. All rights reserved.
 #
 # Authors:
 #
@@ -84,12 +84,16 @@ xocl-y := \
 	../subdev/memory_hbm.o \
 	../subdev/address_translator.o \
 	../subdev/cu.o \
+	../subdev/scu.o \
 	../subdev/p2p.o \
 	../subdev/intc.o \
 	../subdev/m2m.o \
 	../subdev/version_ctrl.o \
 	../subdev/msix_xdma.o \
 	../subdev/ert_user.o \
+	../subdev/accel_deadlock_detector.o \
+	../subdev/command_queue.o \
+	../subdev/cfg_gpio.o \
 	$(xocl_lib-y)	\
 	$(drv_common-y) \
 	xocl_drv.o	\

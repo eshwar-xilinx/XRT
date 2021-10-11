@@ -377,6 +377,7 @@ xocl_read_axlf_helper(struct xocl_drm *drm_p, struct drm_xocl_axlf *axlf_ptr)
 	void *ulp_blob;
 	void *kernels;
 	int rc;
+	bool force_download = false;
 
 	if (!xocl_is_unified(xdev)) {
 		userpf_err(xdev, "XOCL: not unified Shell\n");
@@ -406,8 +407,17 @@ xocl_read_axlf_helper(struct xocl_drm *drm_p, struct drm_xocl_axlf *axlf_ptr)
 		}
 	}
 
-	if (xclbin_downloaded(xdev, &bin_obj.m_header.uuid))
-		goto done;
+	//
+	if (xclbin_downloaded(xdev, &bin_obj.m_header.uuid)) {
+		if ((axlf_ptr->flags & XOCL_AXLF_FORCE_PROGRAM)) {
+			// We come here if user sets force_xclbin_program
+			// option "true" in xrt.ini under [Runtime] section
+			DRM_WARN("%s Force xclbin download", __func__);
+			force_download = true;
+		} else {
+			goto done;
+		}
+	}
 
 	/*
 	 * Support for multiple processes
@@ -489,19 +499,25 @@ xocl_read_axlf_helper(struct xocl_drm *drm_p, struct drm_xocl_axlf *axlf_ptr)
 		}
 		memcpy(xdev->ulp_blob, ulp_blob, fdt_totalsize(ulp_blob));
 
-		xocl_xdev_info(xdev, "check interface uuid");
-		if (!XDEV(xdev)->fdt_blob) {
-			userpf_err(xdev, "did not find platform dtb");
-			err = -EINVAL;
-			goto done;
-		}
-		err = xocl_fdt_check_uuids(xdev,
-			(const void *)XDEV(xdev)->fdt_blob,
-			(const void *)((char*)xdev->ulp_blob));
-		if (err) {
-			userpf_err(xdev, "interface uuids do not match");
-			err = -EINVAL;
-			goto done;
+		/*
+		 * don't check uuid if the xclbin is a lite one
+		 * the lite xclbin will not have BITSTREAM 
+		 */
+		if (xocl_axlf_section_header(xdev, axlf, BITSTREAM)) {
+			xocl_xdev_info(xdev, "check interface uuid");
+			if (!XDEV(xdev)->fdt_blob) {
+				userpf_err(xdev, "did not find platform dtb");
+				err = -EINVAL;
+				goto done;
+			}
+			err = xocl_fdt_check_uuids(xdev,
+				(const void *)XDEV(xdev)->fdt_blob,
+				(const void *)((char*)xdev->ulp_blob));
+			if (err) {
+				userpf_err(xdev, "interface uuids do not match");
+				err = -EINVAL;
+				goto done;
+			}
 		}
 	}
 
@@ -557,7 +573,7 @@ xocl_read_axlf_helper(struct xocl_drm *drm_p, struct drm_xocl_axlf *axlf_ptr)
 		XDEV(xdev)->kernels = kernels;
 	}
 
-	err = xocl_icap_download_axlf(xdev, axlf);
+	err = xocl_icap_download_axlf(xdev, axlf, force_download);
 	if (err) {
 		/* TODO: remove this. Coupling scheduler is a bad idea.
 		 */

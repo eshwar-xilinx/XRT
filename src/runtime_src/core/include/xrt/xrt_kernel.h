@@ -174,18 +174,47 @@ class run
   stop();
 
   /**
+   * abort() - Abort a run object that has been started
+   *
+   * @return
+   *  State of aborted command
+   *
+   * If the run object has been sent to scheduler for execution, then
+   * this function can be used to abort the scheduled command.
+   *
+   * The function is synchronous and will wait for abort to complete.
+   * The return value is the state of the aborted command.
+   */
+  XCL_DRIVER_DLLESPEC
+  ert_cmd_state
+  abort();
+
+  /**
    * wait() - Wait for a run to complete execution
    *
    * @param timeout  
    *  Timeout for wait (default block till run completes)
    * @return 
-   *  Command state upon return of wait
+   *  Command state upon return of wait, or ERT_CMD_STATE_TIMEOUT
+   *  if timeout exceeded.
    *
    * The default timeout of 0ms indicates blocking until run completes.
    *
    * The current thread will block until the run completes or timeout
    * expires. Completion does not guarantee success, the run status
    * should be checked by using ``state``.
+   *
+   * If specified time out is exceeded, the function returns with
+   * ERT_CMD_STATE_TIMEOUT, it is the callers responsibility to abort
+   * the run if it continues to time out.
+   *
+   * The current implementation of this API can mask out the timeout
+   * of this run so that the call either never returns or doesn't
+   * return until the run completes by itself. This can happen if
+   * other runs are continuosly completing within the specified
+   * timeout for this run.  If the device is otherwise idle, or if the
+   * time between run completion exceeds the specified timeout, then
+   * this function will identify the timeout.
    */
   XCL_DRIVER_DLLESPEC
   ert_cmd_state
@@ -197,13 +226,26 @@ class run
    * @param timeout_ms
    *  Timeout in milliseconds
    * @return
-   *  Command state upon return of wait
+   *  Command state upon return of wait, or ERT_CMD_STATE_TIMEOUT
+   *  if timeout exceeded.
    *
    * The default timeout of 0ms indicates blocking until run completes.
    *
    * The current thread will block until the run completes or timeout
    * expires. Completion does not guarantee success, the run status
    * should be checked by using ``state``.
+   *
+   * If specified time out is exceeded, the function returns with
+   * ERT_CMD_STATE_TIMEOUT, it is the callers responsibility to abort
+   * the run if it continues to time out.
+   *
+   * The current implementation of this API can mask out the timeout
+   * of this run so that the call either never returns or doesn't
+   * return until the run completes by itself. This can happen if
+   * other runs are continuosly completing within the specified
+   * timeout for this run.  If the device is otherwise idle, or if the
+   * time between run completion exceeds the specified timeout, then
+   * this function will identify the timeout.
    */
   ert_cmd_state
   wait(unsigned int timeout_ms) const

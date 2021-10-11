@@ -23,6 +23,9 @@
 #include "core/common/utils.h"
 #include "ps_kernel.h"
 
+// 3rd Party Library - Include Files
+#include <boost/property_tree/json_parser.hpp>
+
 namespace qr = xrt_core::query;
 
 enum class cu_type {
@@ -76,11 +79,15 @@ schedulerUpdateStat(xrt_core::device *device)
 {
   try {
     // lock xclbin
-    auto uuid = xrt::uuid(xrt_core::device_query<xrt_core::query::xclbin_uuid>(device));
+    std::string xclbin_uuid = xrt_core::device_query<xrt_core::query::xclbin_uuid>(device);
+    // dont open a context if xclbin_uuid is empty
+    if(xclbin_uuid.empty())
+	    return;
+    auto uuid = xrt::uuid(xclbin_uuid);
     device->open_context(uuid.get(), std::numeric_limits<unsigned int>::max(), true);
     auto at_exit = [] (auto device, auto uuid) { device->close_context(uuid.get(), std::numeric_limits<unsigned int>::max()); };
     xrt_core::scope_guard<std::function<void()>> g(std::bind(at_exit, device, uuid));
-    
+
     device->update_scheduler_status();
   }
   catch (const std::exception&) {
@@ -95,17 +102,25 @@ populate_cus(const xrt_core::device *device)
   boost::property_tree::ptree pt;
   std::vector<char> ip_buf;
   std::vector<std::tuple<uint64_t, uint32_t, uint32_t>> cu_stats; // tuple <base_addr, usage, status>
+  boost::property_tree::ptree ptree;
+
+  try {
+    std::string uuid = xrt::uuid(xrt_core::device_query<xrt_core::query::xclbin_uuid>(device)).to_string();
+    boost::algorithm::to_upper(uuid);
+    ptree.put("xclbin_uuid", uuid);
+  } catch (...) {  }
 
   try {
     ip_buf = xrt_core::device_query<qr::ip_layout_raw>(device);
     cu_stats = xrt_core::device_query<qr::kds_cu_info>(device);
   } catch (const std::exception& ex){
-    pt.put("error_msg", ex.what());
-    return pt;
+    ptree.put("error_msg", ex.what());
+    return ptree;
   }
 
   if(ip_buf.empty() || cu_stats.empty()) {
-    return pt;
+    ptree.put("error_msg", "ip_layout/kds_cu data is empty");
+    return ptree;
   }
 
   const ip_layout *layout = reinterpret_cast<const ip_layout*>(ip_buf.data());
@@ -123,18 +138,13 @@ populate_cus(const xrt_core::device *device)
         ptCu.put( "name",			layout->m_ip_data[i].m_name);
         ptCu.put( "base_address",		boost::str(boost::format("0x%x") % base_addr));
         ptCu.put( "usage",			usage);
+        ptCu.put( "type", enum_to_str(cu_type::PL));
         ptCu.add_child( std::string("status"),	get_cu_status(status));
         pt.push_back(std::make_pair("", ptCu));
       }
     }
   }
 
-  boost::property_tree::ptree ptree;
-  try {
-    std::string uuid = xrt::uuid(xrt_core::device_query<xrt_core::query::xclbin_uuid>(device)).to_string();
-    boost::algorithm::to_upper(uuid);
-    ptree.put("xclbin_uuid", uuid);
-  } catch (...) {  }
   ptree.add_child("compute_units", pt);
   return ptree;
 }
@@ -164,24 +174,31 @@ boost::property_tree::ptree
 populate_cus_new(const xrt_core::device *device)
 {
   schedulerUpdateStat(const_cast<xrt_core::device *>(device));
-  
+
   boost::property_tree::ptree pt;
   using cu_data_type = qr::kds_cu_stat::data_type;
   using scu_data_type = qr::kds_scu_stat::data_type;
   std::vector<cu_data_type> cu_stats;
   std::vector<scu_data_type> scu_stats;
+  boost::property_tree::ptree ptree;
+  try {
+    std::string uuid = xrt::uuid(xrt_core::device_query<xrt_core::query::xclbin_uuid>(device)).to_string();
+    boost::algorithm::to_upper(uuid);
+    ptree.put("xclbin_uuid", uuid);
+  } catch (...) {  }
 
   try {
     cu_stats  = xrt_core::device_query<qr::kds_cu_stat>(device);
     scu_stats = xrt_core::device_query<qr::kds_scu_stat>(device);
-  } 
+  }
   catch (const xrt_core::query::no_such_key&) {
     // Ignoring if not available: Edge Case
   }
   catch (const std::exception& ex) {
-    pt.put("error_msg", ex.what());
-    return pt;
+    ptree.put("error_msg", ex.what());
+    return ptree;
   }
+
   for (auto& stat : cu_stats) {
     boost::property_tree::ptree ptCu;
     ptCu.put( "name",           stat.name);
@@ -195,7 +212,7 @@ populate_cus_new(const xrt_core::device *device)
   std::vector<ps_kernel_data> psKernels;
   if (getPSKernels(psKernels, device) < 0) {
     std::cout << "WARNING: 'ps_kernel' invalid. Has the PS kernel been loaded? See 'xbutil program'.\n";
-    return pt;
+    return ptree;
   }
 
   uint32_t psk_inst = 0;
@@ -205,7 +222,7 @@ populate_cus_new(const xrt_core::device *device)
     boost::property_tree::ptree ptCu;
     std::string scu_name = "Illegal";
     if (psk_inst >= psKernels.size()) {
-      scu_name = stat.name; 
+      scu_name = stat.name;
       //This means something is wrong
       //scu_name e.g. kernel_vcu_encoder:scu_34
     } else {
@@ -232,14 +249,13 @@ populate_cus_new(const xrt_core::device *device)
     }
   }
 
-  boost::property_tree::ptree ptree;
-  try {
-    std::string uuid = xrt::uuid(xrt_core::device_query<xrt_core::query::xclbin_uuid>(device)).to_string();
-    boost::algorithm::to_upper(uuid);
-    ptree.put("xclbin_uuid", uuid);
-  } catch (...) {  }
-  ptree.add_child("compute_units", pt);
-  return ptree;
+  boost::property_tree::ptree pt_dynamic_regions;
+  xrt::device dev(device->get_device_id());
+  std::stringstream ss;
+  ss << dev.get_info<xrt::info::device::dynamic_regions>();
+  boost::property_tree::read_json(ss, pt_dynamic_regions);
+  pt_dynamic_regions.add_child("compute_units", pt);
+  return pt_dynamic_regions;
 }
 
 void
@@ -281,7 +297,7 @@ ReportDynamicRegion::writeReport( const xrt_core::device* /*_pDevice*/,
                        std::ostream & _output) const
 {
   boost::property_tree::ptree empty_ptree;
-  boost::format cuFmt("    %-8s%-30s%-16s%-8s%-8s\n");
+  boost::format cuFmt("    %-8s%-50s%-16s%-8s%-8s\n");
 
   //check if a valid CU report is generated
   const boost::property_tree::ptree& pt_dfx = _pt.get_child("dynamic_regions", empty_ptree);

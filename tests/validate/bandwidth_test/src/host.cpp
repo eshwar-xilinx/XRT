@@ -1,5 +1,5 @@
 /**
-* Copyright (C) 2020 Xilinx, Inc
+* Copyright (C) 2019-2021 Xilinx, Inc
 *
 * Licensed under the Apache License, Version 2.0 (the "License"). You may
 * not use this file except in compliance with the License. A copy of the
@@ -13,56 +13,92 @@
 * License for the specific language governing permissions and limitations
 * under the License.
 */
-#include "cmdlineparser.h"
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
+#include <boost/filesystem.hpp>
 #include <math.h>
 #include <sys/time.h>
 #include <xcl2.hpp>
 
+static void printHelp() {
+    std::cout << "usage: %s <options>\n";
+    std::cout << "  -p <path>\n";
+    std::cout << "  -d <device> \n";
+    std::cout << "  -l <loop_iter_cnt> \n";
+    std::cout << "  -s <supported>\n";
+    std::cout << "  -h <help>\n";
+}
+
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <Platform Test Area Path>"
-                  << "<optional> -d device_id"
-                  << "<optional> -l iter_cnt" << std::endl;
+    std::string dev_id = "0";
+    std::string test_path;
+    std::string iter_cnt = "10000";
+    std::string b_file = "/bandwidth.xclbin";
+    bool flag_s = false;
+
+    for (int i = 1; i < argc; i++) {
+        if ((strcmp(argv[i], "-p") == 0) || (strcmp(argv[i], "--path") == 0)) {
+            test_path = argv[i + 1];
+        } else if ((strcmp(argv[i], "-d") == 0) || (strcmp(argv[i], "--device") == 0)) {
+            dev_id = argv[i + 1];
+        } else if ((strcmp(argv[i], "-l") == 0) || (strcmp(argv[i], "--loop_iter_cnt") == 0)) {
+            iter_cnt = argv[i + 1];
+        } else if ((strcmp(argv[i], "-s") == 0) || (strcmp(argv[i], "--supported") == 0)) {
+            flag_s = true;
+        } else if ((strcmp(argv[i], "-h") == 0) || (strcmp(argv[i], "--help") == 0)) {
+            printHelp();
+            return 1;
+        }
+    }
+
+    if (test_path.empty()) {
+        std::cout << "ERROR : please provide the platform test path to -p option\n";
         return EXIT_FAILURE;
     }
 
-    // Command Line Parser
-    sda::utils::CmdLineParser parser;
+    auto binaryFile = boost::filesystem::path(test_path) / b_file;
+    std::ifstream infile(binaryFile.string());
+    if (flag_s) {
+        if (!infile.good()) {
+            std::cout << "\nNOT SUPPORTED" << std::endl;
+            return EOPNOTSUPP;
+        } else {
+            std::cout << "\nSUPPORTED" << std::endl;
+            return EXIT_SUCCESS;
+        }
+    }
 
-    // Switches
-    //**************//"<Full Arg>",  "<Short Arg>", "<Description>", "<Default>"
-    parser.addSwitch("--device", "-d", "device id", "0");
-    parser.addSwitch("--iter_cnt", "-l", "loop iteration count", "10000");
-    parser.parse(argc, argv);
-
-    // Read settings
-    std::string dev_id = parser.value("device");
-    std::string iter_cnt = parser.value("iter_cnt");
-
-    int NUM_KERNEL;
-    std::string test_path = argv[1];
+    int num_kernel = 0, num_kernel_ddr = 0;
+    bool chk_hbm_mem = false;
     std::string filename = "/platform.json";
-    std::string platform_json = test_path + filename;
+    auto platform_json = boost::filesystem::path(test_path) / filename;
 
     try {
-        boost::property_tree::ptree loadPtreeRoot;
-        boost::property_tree::read_json(platform_json, loadPtreeRoot);
-        boost::property_tree::ptree temp;
+        boost::property_tree::ptree load_ptree_root;
+        boost::property_tree::read_json(platform_json.string(), load_ptree_root);
 
-        temp = loadPtreeRoot.get_child("total_ddr_banks");
-        NUM_KERNEL = temp.get_value<int>();
+        auto temp = load_ptree_root.get_child("total_ddr_banks");
+        num_kernel = temp.get_value<int>();
+        num_kernel_ddr = num_kernel;
+        auto pt_mem_array = load_ptree_root.get_child("meminfo");
+        for (const auto& mem_entry : pt_mem_array) {
+            boost::property_tree::ptree pt_mem_entry = mem_entry.second;
+            auto sValue = pt_mem_entry.get<std::string>("type");
+            if (sValue == "HBM") {
+                chk_hbm_mem = true;
+            }
+        }
+        if (chk_hbm_mem) {
+            // As HBM is part of platform, number of ddr kernels is total count reduced by 1(single HBM)
+            num_kernel_ddr = num_kernel - 1;
+        }
     } catch (const std::exception& e) {
         std::string msg("ERROR: Bad JSON format detected while marshaling build metadata (");
         msg += e.what();
         msg += ").";
-        std::cout << msg << std::endl;
+        std::cerr << msg << std::endl;
     }
 
-    std::string b_file = "/bandwidth.xclbin";
-    std::string binaryFile = test_path + b_file;
-    std::ifstream infile(binaryFile);
     if (!infile.good()) {
         std::cout << "\nNOT SUPPORTED" << std::endl;
         return EOPNOTSUPP;
@@ -71,7 +107,7 @@ int main(int argc, char** argv) {
     cl_int err;
     cl::Context context;
     std::string krnl_name = "bandwidth";
-    std::vector<cl::Kernel> krnls(NUM_KERNEL);
+    std::vector<cl::Kernel> krnls(num_kernel);
     cl::CommandQueue q;
 
     // OPENCL HOST CODE AREA START
@@ -80,8 +116,8 @@ int main(int argc, char** argv) {
     auto devices = xcl::get_xil_devices();
     // read_binary_file() is a utility API which will load the binaryFile
     // and will return the pointer to file buffer.
-    auto fileBuf = xcl::read_binary_file(binaryFile);
-    cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};
+    auto file_buf = xcl::read_binary_file(binaryFile.string());
+    cl::Program::Binaries bins{{file_buf.data(), file_buf.size()}};
 
     auto pos = dev_id.find(":");
     cl::Device device;
@@ -111,11 +147,9 @@ int main(int argc, char** argv) {
         std::cout << "Failed to program device with xclbin file!\n";
     } else {
         std::cout << "Device program successful!\n";
-        for (int i = 0; i < NUM_KERNEL; i++) {
+        for (int i = 0; i < num_kernel; i++) {
             std::string cu_id = std::to_string(i + 1);
             std::string krnl_name_full = krnl_name + ":{" + "bandwidth_" + cu_id + "}";
-
-            printf("Creating a kernel [%s] for CU(%d)\n", krnl_name_full.c_str(), i + 1);
 
             // Here Kernel object is created by specifying kernel name along with
             // compute unit.
@@ -128,105 +162,177 @@ int main(int argc, char** argv) {
 
     double max_throughput = 0;
     int reps = stoi(iter_cnt);
+    if (num_kernel_ddr) {
+        // Starting at 4K and going up to 16M with increments of power of 2
+        for (uint32_t i = 4 * 1024; i <= 16 * 1024 * 1024; i *= 2) {
+            unsigned int data_size = i;
 
-    for (uint32_t i = 4 * 1024; i <= 16 * 1024 * 1024; i *= 2) {
-        unsigned int DATA_SIZE = i;
+            if (xcl::is_emulation()) {
+                reps = 2; // reducing the repeat count to 2 for emulation flow
+                // Running only upto 8K for emulation flow
+                if (data_size > 8 * 1024) {
+                    break;
+                }
+            }
 
-        if (xcl::is_emulation()) {
-            reps = 2;
-            if (DATA_SIZE > 8 * 1024) break;
+            unsigned int vector_size_bytes = data_size;
+            std::vector<unsigned char, aligned_allocator<unsigned char> > input_host(data_size);
+            std::vector<unsigned char, aligned_allocator<unsigned char> > output_host[num_kernel_ddr];
+
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                output_host[i].resize(data_size);
+            }
+            // Filling up memory with an incremental byte pattern
+            for (uint32_t j = 0; j < data_size; j++) {
+                input_host[j] = j % 256;
+            }
+
+            // Initializing output vectors to zero
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                std::fill(output_host[i].begin(), output_host[i].end(), 0);
+            }
+
+            std::vector<cl::Buffer> input_buffer(num_kernel_ddr);
+            std::vector<cl::Buffer> output_buffer(num_kernel_ddr);
+
+            // These commands will allocate memory on the FPGA. The cl::Buffer objects
+            // can
+            // be used to reference the memory locations on the device.
+            // Creating Buffers
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                OCL_CHECK(err,
+                          input_buffer[i] = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
+                OCL_CHECK(err,
+                          output_buffer[i] = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
+            }
+
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                OCL_CHECK(err, err = krnls[i].setArg(0, input_buffer[i]));  // setting input data buffer
+                OCL_CHECK(err, err = krnls[i].setArg(1, output_buffer[i])); // setting output data buffer
+                OCL_CHECK(err, err = krnls[i].setArg(2, data_size));        // size of the data
+                OCL_CHECK(err, err = krnls[i].setArg(3, reps));             // repeat counter
+            }
+
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                OCL_CHECK(err, err = q.enqueueWriteBuffer(input_buffer[i], CL_TRUE, 0, vector_size_bytes,
+                                                          input_host.data(), nullptr, nullptr));
+                OCL_CHECK(err, err = q.finish());
+            }
+
+            auto time_start = std::chrono::high_resolution_clock::now();
+
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                OCL_CHECK(err, err = q.enqueueTask(krnls[i]));
+            }
+            q.finish();
+            auto time_end = std::chrono::high_resolution_clock::now();
+
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                OCL_CHECK(err, err = q.enqueueReadBuffer(output_buffer[i], CL_TRUE, 0, vector_size_bytes,
+                                                         output_host[i].data(), nullptr, nullptr));
+                OCL_CHECK(err, err = q.finish());
+            }
+
+            // check
+            for (int i = 0; i < num_kernel_ddr; i++) {
+                for (uint32_t j = 0; j < data_size; j++) {
+                    if (output_host[i][j] != input_host[j]) {
+                        std::cout << "ERROR : kernel failed to copy entry " << j << " input " << input_host[j]
+                                  << " output " << output_host[i][j] << std::endl;
+                        return EXIT_FAILURE;
+                    }
+                }
+            }
+
+            double usduration =
+                (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(time_end - time_start).count() / reps);
+
+            double dnsduration = (double)usduration;
+            double dsduration = dnsduration / ((double)1000000000); // Convert the duration from nanoseconds to seconds
+            double bpersec = (data_size * num_kernel_ddr) / dsduration;
+            double mbpersec = (2 * bpersec) / ((double)1024 * 1024); // Convert b/sec to mb/sec
+
+            if (mbpersec > max_throughput) max_throughput = mbpersec;
         }
 
-        unsigned int vector_size_bytes = DATA_SIZE;
-        std::vector<unsigned char, aligned_allocator<unsigned char> > input_host(DATA_SIZE);
-        std::vector<unsigned char, aligned_allocator<unsigned char> > output_host[NUM_KERNEL];
+        std::cout << "Throughput (Type: DDR) (Bank count: " << num_kernel_ddr << ") : " << max_throughput << "MB/s\n";
+    }
+    if (chk_hbm_mem) {
+        // Starting at 4K and going up to 16M with increments of power of 2
+        for (uint32_t i = 4 * 1024; i <= 16 * 1024 * 1024; i *= 2) {
+            unsigned int data_size = i;
 
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            output_host[i].resize(DATA_SIZE);
-        }
-        for (uint32_t j = 0; j < DATA_SIZE; j++) {
-            input_host[j] = j % 256;
-        }
+            if (xcl::is_emulation()) {
+                reps = 2; // reducing the repeat count to 2 for emulation flow
+                // Running only upto 8K for emulation flow
+                if (data_size > 8 * 1024) {
+                    break;
+                }
+            }
 
-        // Initializing output vectors to zero
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            std::fill(output_host[i].begin(), output_host[i].end(), 0);
-        }
+            unsigned int vector_size_bytes = data_size;
+            std::vector<unsigned char, aligned_allocator<unsigned char> > input_host(data_size);
+            std::vector<unsigned char, aligned_allocator<unsigned char> > output_host(data_size);
 
-        std::vector<cl::Buffer> input_buffer(NUM_KERNEL);
-        std::vector<cl::Buffer> output_buffer(NUM_KERNEL);
+            for (uint32_t j = 0; j < data_size; j++) {
+                input_host[j] = j % 256;
+            }
 
-        // These commands will allocate memory on the FPGA. The cl::Buffer objects
-        // can
-        // be used to reference the memory locations on the device.
-        // Creating Buffers
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            OCL_CHECK(err, input_buffer[i] = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
-            OCL_CHECK(err, output_buffer[i] = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
-        }
+            // Initializing output vectors to zero
+            std::fill(output_host.begin(), output_host.end(), 0);
 
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            OCL_CHECK(err, err = krnls[i].setArg(0, input_buffer[i]));
-            OCL_CHECK(err, err = krnls[i].setArg(1, output_buffer[i]));
-            OCL_CHECK(err, err = krnls[i].setArg(2, DATA_SIZE));
-            OCL_CHECK(err, err = krnls[i].setArg(3, reps));
-        }
+            cl::Buffer input_buffer, output_buffer;
 
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            OCL_CHECK(err, err = q.enqueueWriteBuffer(input_buffer[i], CL_TRUE, 0, vector_size_bytes, input_host.data(),
+            // These commands will allocate memory on the FPGA. The cl::Buffer objects
+            // can
+            // be used to reference the memory locations on the device.
+            // Creating Buffers
+            OCL_CHECK(err, input_buffer = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
+            OCL_CHECK(err, output_buffer = cl::Buffer(context, CL_MEM_READ_WRITE, vector_size_bytes, nullptr, &err));
+
+            OCL_CHECK(err, err = krnls[num_kernel - 1].setArg(0, input_buffer));  // setting input data buffer
+            OCL_CHECK(err, err = krnls[num_kernel - 1].setArg(1, output_buffer)); // setting output data buffer
+            OCL_CHECK(err, err = krnls[num_kernel - 1].setArg(2, data_size));     // size of the data
+            OCL_CHECK(err, err = krnls[num_kernel - 1].setArg(3, reps));          // repeat counter
+
+            OCL_CHECK(err, err = q.enqueueWriteBuffer(input_buffer, CL_TRUE, 0, vector_size_bytes, input_host.data(),
                                                       nullptr, nullptr));
             OCL_CHECK(err, err = q.finish());
-        }
 
-        std::chrono::high_resolution_clock::time_point timeStart;
-        std::chrono::high_resolution_clock::time_point timeEnd;
+            auto time_start = std::chrono::high_resolution_clock::now();
 
-        timeStart = std::chrono::high_resolution_clock::now();
+            OCL_CHECK(err, err = q.enqueueTask(krnls[num_kernel - 1]));
+            q.finish();
+            auto time_end = std::chrono::high_resolution_clock::now();
 
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            OCL_CHECK(err, err = q.enqueueTask(krnls[i]));
-        }
-        q.finish();
-        timeEnd = std::chrono::high_resolution_clock::now();
-
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            OCL_CHECK(err, err = q.enqueueReadBuffer(output_buffer[i], CL_TRUE, 0, vector_size_bytes,
-                                                     output_host[i].data(), nullptr, nullptr));
+            OCL_CHECK(err, err = q.enqueueReadBuffer(output_buffer, CL_TRUE, 0, vector_size_bytes, output_host.data(),
+                                                     nullptr, nullptr));
             OCL_CHECK(err, err = q.finish());
-        }
 
-        // check
-        for (int i = 0; i < NUM_KERNEL; i++) {
-            for (uint32_t j = 0; j < DATA_SIZE; j++) {
-                if (output_host[i][j] != input_host[j]) {
-                    printf("ERROR : kernel failed to copy entry %i input %i output %i\n", j, input_host[j],
-                           output_host[i][j]);
+            // check
+            for (uint32_t j = 0; j < data_size; j++) {
+                if (output_host[j] != input_host[j]) {
+                    std::cout << "ERROR : kernel failed to copy entry " << j << " input " << input_host[j] << " output "
+                              << output_host[j] << std::endl;
                     return EXIT_FAILURE;
                 }
             }
+
+            double usduration =
+                (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(time_end - time_start).count() / reps);
+
+            double dnsduration = (double)usduration;
+            double dsduration = dnsduration / ((double)1000000000); // Convert duration from nanoseconds to seconds
+            double bpersec = data_size / dsduration;
+            double mbpersec = (2 * bpersec) / ((double)1024 * 1024); // Convert b/sec to mb/sec
+
+            if (mbpersec > max_throughput) max_throughput = mbpersec;
         }
 
-        double usduration;
-        double dnsduration;
-        double dsduration;
-        double bpersec;
-        double mbpersec;
-
-        usduration =
-            (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(timeEnd - timeStart).count() / reps);
-
-        dnsduration = (double)usduration;
-        dsduration = dnsduration / ((double)1000000000);
-        bpersec = (DATA_SIZE * NUM_KERNEL) / dsduration;
-        mbpersec = (2 * bpersec) / ((double)1024 * 1024); // For concurrent Read/Write
-
-        if (mbpersec > max_throughput) max_throughput = mbpersec;
+        std::cout << "Throughput (Type: HBM) (Bank count: 1) : " << max_throughput << "MB/s\n";
     }
-
-    std::cout << "Maximum throughput: " << max_throughput << "MB/s\n";
 
     std::cout << "TEST PASSED\n";
 
     return EXIT_SUCCESS;
 }
-

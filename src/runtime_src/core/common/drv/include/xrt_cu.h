@@ -20,6 +20,7 @@
 #include <linux/spinlock.h>
 #include <linux/io.h>
 #include <linux/kthread.h>
+#include <linux/circ_buf.h>
 #include "kds_command.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
@@ -57,6 +58,7 @@
 #define CU_AP_READY	(0x1 << 3)
 #define CU_AP_CONTINUE	(0x1 << 4)
 #define CU_AP_RESET	(0x1 << 5)
+#define CU_AP_SW_RESET	(0x1 << 8)
 /* Special macro(s) which not defined by HLS CU */
 #define CU_AP_CRASHED	(0xFFFFFFFF)
 
@@ -136,7 +138,7 @@ struct xcu_funcs {
 	 *
 	 * Check CU status and the pending task status.
 	 */
-	void (*check)(void *core, struct xcu_status *status);
+	void (*check)(void *core, struct xcu_status *status, bool force);
 
 	/**
 	 * @reset:
@@ -150,7 +152,7 @@ struct xcu_funcs {
 	 *
 	 * Check if CU is properly reset
 	 */
-	int (*reset_done)(void *core);
+	bool (*reset_done)(void *core);
 
 	/**
 	 * @enable_intr:
@@ -207,14 +209,31 @@ struct xrt_cu_info {
 	u32			 is_m2m;
 	u32			 num_res;
 	bool			 intr_enable;
+	bool			 sw_reset;
 	struct xrt_cu_arg	*args;
 	u32			 num_args;
 	char			 iname[32];
 	char			 kname[32];
 };
 
+struct per_custat {
+	u64		usage;
+};
+
 #define CU_STATE_GOOD  0x1
 #define CU_STATE_BAD   0x2
+
+/* The Buf size and xrt_cu_log size must be power of 2 */
+#define CIRC_BUF_SIZE 2 * 4096
+struct xrt_cu_log {
+	u64		stage:32;
+	uintptr_t	cmd_id:32;
+	u64		ts;
+};
+#define CU_LOG_STAGE_RQ		1
+#define CU_LOG_STAGE_ISR	2
+#define CU_LOG_STAGE_SQ		3
+#define CU_LOG_STAGE_CQ		4
 
 /* Supported event type */
 struct xrt_cu {
@@ -225,6 +244,11 @@ struct xrt_cu {
 	struct list_head	  pq;
 	spinlock_t		  pq_lock;
 	u32			  num_pq;
+	/* high priority queue */
+	struct list_head	  hpq;
+	spinlock_t		  hpq_lock;
+	u32			  num_hpq;
+	struct completion	  comp;
 	/*
 	 * Pending Q is used in thread that is submitting CU cmds.
 	 * Other Qs are used in thread that is completing them.
@@ -260,6 +284,8 @@ struct xrt_cu {
 	struct timer_list	  timer;
 	atomic_t		  tick;
 
+	struct per_custat	  cu_stat;
+
 	/**
 	 * @funcs:
 	 *
@@ -280,6 +306,11 @@ struct xrt_cu {
 	atomic_t		   ucu_event;
 	int (* user_manage_irq)(struct xrt_cu *xcu, bool user_manage);
 	int (* configure_irq)(struct xrt_cu *xcu, bool enable);
+
+	/* For debug/analysis */
+	char			   debug;
+	char			   log_buf[CIRC_BUF_SIZE] __aligned(sizeof(u64));
+	struct circ_buf		   crc_buf;
 };
 
 static inline char *prot2str(enum CU_PROTOCOL prot)
@@ -294,9 +325,6 @@ static inline char *prot2str(enum CU_PROTOCOL prot)
 	default:		return "UNKNOWN";
 	}
 }
-
-void xrt_cu_reset(struct xrt_cu *xcu);
-int  xrt_cu_reset_done(struct xrt_cu *xcu);
 
 static void inline xrt_cu_enable_intr(struct xrt_cu *xcu, u32 intr_type)
 {
@@ -325,18 +353,38 @@ static inline void xrt_cu_start(struct xrt_cu *xcu)
 	xcu->funcs->start(xcu->core);
 }
 
-static inline void xrt_cu_check(struct xrt_cu *xcu)
+static inline void xrt_cu_reset(struct xrt_cu *xcu)
+{
+	xcu->funcs->reset(xcu->core);
+}
+
+static inline bool xrt_cu_reset_done(struct xrt_cu *xcu)
+{
+	return xcu->funcs->reset_done(xcu->core);
+}
+
+static inline void __xrt_cu_check(struct xrt_cu *xcu, bool force)
 {
 	struct xcu_status status;
 
 	status.num_done = 0;
 	status.num_ready = 0;
 	status.new_status = 0;
-	xcu->funcs->check(xcu->core, &status);
+	xcu->funcs->check(xcu->core, &status, force);
 	/* XRT CU assume command finished in order */
 	xcu->done_cnt += status.num_done;
 	xcu->ready_cnt += status.num_ready;
 	xcu->status = status.new_status;
+}
+
+static inline void xrt_cu_check(struct xrt_cu *xcu)
+{
+	__xrt_cu_check(xcu, false);
+}
+
+static inline void xrt_cu_check_force(struct xrt_cu *xcu)
+{
+	__xrt_cu_check(xcu, true);
 }
 
 static inline int xrt_cu_get_credit(struct xrt_cu *xcu)
@@ -379,6 +427,7 @@ u32 round_up_to_next_power2(u32 size)
  * 3. Check if submitted command is completed or not
  */
 void xrt_cu_submit(struct xrt_cu *xcu, struct kds_command *xcmd);
+void xrt_cu_hpq_submit(struct xrt_cu *xcu, struct kds_command *xcmd);
 void xrt_cu_abort(struct xrt_cu *xcu, struct kds_client *client);
 bool xrt_cu_abort_done(struct xrt_cu *xcu, struct kds_client *client);
 int xrt_cu_cfg_update(struct xrt_cu *xcu, int intr);
@@ -392,6 +441,10 @@ void xrt_cu_fini(struct xrt_cu *xcu);
 
 ssize_t show_cu_stat(struct xrt_cu *xcu, char *buf);
 ssize_t show_cu_info(struct xrt_cu *xcu, char *buf);
+ssize_t show_formatted_cu_stat(struct xrt_cu *xcu, char *buf);
+
+void xrt_cu_circ_produce(struct xrt_cu *xcu, u32 stage, uintptr_t cmd);
+ssize_t xrt_cu_circ_consume_all(struct xrt_cu *xcu, char *buf, size_t size);
 
 /* CU Implementations */
 #define to_cu_hls(core) ((struct xrt_cu_hls *)(core))
@@ -455,5 +508,4 @@ struct xrt_cu_plram {
 
 int xrt_cu_plram_init(struct xrt_cu *xcu);
 void xrt_cu_plram_fini(struct xrt_cu *xcu);
-
 #endif /* _XRT_CU_H */

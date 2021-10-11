@@ -418,6 +418,7 @@ static int __xocl_subdev_construct(xdev_handle_t xdev_hdl,
 	int retval = 0, i, bar_idx;
 	struct resource *res = NULL;
 	resource_size_t iostart;
+	u64 bar_start, bar_end;
 
 	if (subdev->info.override_name)
 		snprintf(devname, sizeof(devname) - 1, "%s",
@@ -462,6 +463,21 @@ static int __xocl_subdev_construct(xdev_handle_t xdev_hdl,
 					&res[i], subdev->info.level);
 			if (retval && retval != -ENODEV)
 				goto error;
+
+			/* If any addressable end point is of 64 bit xrt has
+			 * to pass only offset.
+			 * Get the offset by comparing with bar mappings of CPM.
+			 */
+			if(core->bars) {
+				bar_start = core->bars[bar_idx].base_addr;
+				bar_end = core->bars[bar_idx].base_addr +
+						core->bars[bar_idx].range - 1;
+				if((bar_start <= res[i].start) &&
+						(res[i].end <= bar_end)) {
+					res[i].start -= bar_start;
+					res[i].end -= bar_start;
+				}
+			}
 			iostart = pci_resource_start(core->pdev, bar_idx);
 			res[i].start += iostart;
 			if (!res[i].end) {
@@ -1351,6 +1367,13 @@ xocl_fetch_dynamic_platform(struct xocl_dev_core *core,
 	u32 type;
 
 	ret = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_VNDR);
+	/*
+	 * Also try find VSEC in basic config space if we don't find it in
+	 * extended config space
+	 */
+	if (!ret)
+		ret = pci_find_capability(pdev, PCI_CAP_ID_VNDR);
+
 	if (ret)
 		type = XOCL_DSAMAP_RAPTOR2;
 	else
@@ -1520,7 +1543,7 @@ int xocl_subdev_find_vsec_offset(xdev_handle_t xdev)
 	 */
 	do {
 		cap = pci_find_next_ext_capability(pdev,
-						offset_vsec, PCI_EXT_CAP_ID_VNDR);
+			offset_vsec, PCI_EXT_CAP_ID_VNDR);
 		if (cap == 0)
 			break;
 
@@ -1536,6 +1559,32 @@ int xocl_subdev_find_vsec_offset(xdev_handle_t xdev)
 			break;
 
 		offset_vsec = cap;
+	} while (cap != 0);
+
+	/*
+	 * If we don't find VSEC in extended config space, also try search in
+	 * basic config space. This applies in some virtualization case, the
+	 * vsec is emulated in basic config space when the FPGA is assigned
+	 * to VM
+	 */
+
+	if (cap)
+		return cap;
+
+	cap = pci_find_capability(pdev, PCI_CAP_ID_VNDR);
+	do {
+		ret = pci_read_config_word(pdev, (cap + PCI_VNDR_HEADER), &vsec_id);
+		if (ret != 0) {
+			xocl_err(&pdev->dev, "pci read failed for offset: 0x%x, err: %d",
+					 (cap + PCI_VNDR_HEADER), ret);
+			cap = 0;
+			break;
+		}
+
+		if (vsec_id == XOCL_VSEC_ALF_VSEC_ID)
+			break;
+
+		cap = pci_find_next_capability(pdev, cap, PCI_CAP_ID_VNDR);
 	} while (cap != 0);
 
 	return cap;
@@ -1606,7 +1655,7 @@ int xocl_subdev_create_vsec_devs(xdev_handle_t xdev)
 			if (ret)
 				return ret;
 			break;
-		case XOCL_VSEC_FLASH_TYPE_VERSAL:
+		case XOCL_VSEC_FLASH_TYPE_XFER_VERSAL:
 			xocl_xdev_dbg(xdev,
 			    "VSEC VERSAL FLASH RES Start 0x%llx, bar %d",
 			    offset, bar);
@@ -1618,6 +1667,26 @@ int xocl_subdev_create_vsec_devs(xdev_handle_t xdev)
 			memcpy(((struct xocl_flash_privdata *)
 			    (subdev_info.priv_data))->flash_type,
 			    FLASH_TYPE_OSPI_VERSAL, strlen(FLASH_TYPE_OSPI_VERSAL));
+
+			ret = xocl_subdev_create_vsec_impl(xdev, &subdev_info,
+				offset, bar);
+
+			if (ret)
+				return ret;
+			break;
+		case XOCL_VSEC_FLASH_TYPE_XGQ:
+			/*TODO: VSEC definition is TBD, we now get res from metadata */
+			xocl_xdev_dbg(xdev,
+			    "VSEC XGQ FLASH RES Start 0x%llx, bar %d",
+			    offset, bar);
+
+			/* set devinfo to xfer versal */
+			subdev_info.id = XOCL_SUBDEV_XGQ;
+			subdev_info.name = XOCL_XGQ;
+			subdev_info.res[0].name = XOCL_XGQ;
+			memcpy(((struct xocl_flash_privdata *)
+			    (subdev_info.priv_data))->flash_type,
+			    FLASH_TYPE_OSPI_XGQ, strlen(FLASH_TYPE_OSPI_XGQ));
 
 			ret = xocl_subdev_create_vsec_impl(xdev, &subdev_info,
 				offset, bar);
@@ -1996,4 +2065,46 @@ int xocl_wait_pci_status(struct pci_dev *pdev, u16 mask, u16 val, int timeout)
 		return -ETIME;
 
 	return 0;
+}
+
+/*
+ * A wait_for_completion() hang inside request_firmware() was shown with multiple cards
+ * test. It is due to race condition when multiple threads call request_firmware() at
+ * the same firmware file. Thus, adding a wrapper function to resolve the race.
+ * Loading firmware is not in a critical path, just use a global lock to protect.
+ */
+static DEFINE_MUTEX(firmware_lock);
+int xocl_request_firmware(struct device *dev, const char *fw_name, char **buf, size_t *len)
+{
+	const struct firmware *fw = NULL;
+	int ret;
+
+	*buf = NULL;
+	mutex_lock(&firmware_lock);
+	ret = request_firmware(&fw, fw_name, dev);
+	if (ret)
+		goto failed;
+
+	*buf = vmalloc(fw->size);
+	if (!*buf) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+	memcpy(*buf, fw->data, fw->size);
+	if (len)
+		*len = fw->size;
+	release_firmware(fw);
+	mutex_unlock(&firmware_lock);
+
+	return 0;
+
+failed:
+	if (fw)
+		release_firmware(fw);
+	mutex_unlock(&firmware_lock);
+
+	vfree(*buf);
+	*buf = NULL;
+
+	return ret;
 }

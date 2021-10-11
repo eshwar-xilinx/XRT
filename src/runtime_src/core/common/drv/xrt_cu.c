@@ -14,6 +14,62 @@
 #include "kds_client.h"
 #include "xrt_cu.h"
 
+inline void xrt_cu_circ_produce(struct xrt_cu *xcu, u32 stage, uintptr_t cmd)
+{
+	unsigned long head = xcu->crc_buf.head;
+	unsigned long tail = xcu->crc_buf.tail;
+	struct xrt_cu_log *item;
+
+	if (!xcu->debug)
+		return;
+
+	/* Will overwrite oldest data if buffer is full */
+	item = (struct xrt_cu_log *)&xcu->crc_buf.buf[head];
+	item->stage = stage;
+	item->cmd_id = cmd;
+	item->ts = ktime_to_ns(ktime_get());
+
+	if (CIRC_SPACE(head, tail, CIRC_BUF_SIZE) < sizeof(struct xrt_cu_log)) {
+		tail += sizeof(struct xrt_cu_log);
+		if (tail >= CIRC_BUF_SIZE)
+			tail = 0;
+	}
+
+	head += sizeof(struct xrt_cu_log);
+	if (head >= CIRC_BUF_SIZE)
+		head = 0;
+
+	xcu->crc_buf.head = head;
+	xcu->crc_buf.tail = tail;
+}
+
+ssize_t xrt_cu_circ_consume_all(struct xrt_cu *xcu, char *buf, size_t size)
+{
+	unsigned long head = xcu->crc_buf.head;
+	unsigned long tail = xcu->crc_buf.tail;
+	size_t cnt = CIRC_CNT(head, tail, CIRC_BUF_SIZE);
+	/* return min(count to the end of buffer, CIRC_CNT()) */
+	size_t cnt_to_end = CIRC_CNT_TO_END(head, tail, CIRC_BUF_SIZE);
+	size_t nread = 0;
+
+	if (size < cnt)
+		nread = size;
+	else
+		nread = cnt;
+
+	if (nread <= cnt_to_end) {
+		memcpy(buf, xcu->crc_buf.buf + tail, nread);
+		xcu->crc_buf.tail += nread;
+	} else {
+		/* Needs two times of copy */
+		memcpy(buf, xcu->crc_buf.buf + tail, cnt_to_end);
+		memcpy(buf + cnt_to_end, xcu->crc_buf.buf, nread - cnt_to_end);
+		xcu->crc_buf.tail = nread - cnt_to_end;
+	}
+
+	return nread;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 static void cu_timer(unsigned long data)
 {
@@ -57,6 +113,28 @@ move_to_queue(struct kds_command *xcmd, struct list_head *dst_q, u32 *dst_len)
 	++(*dst_len);
 }
 
+static inline bool
+sw_reset_cu(struct xrt_cu *xcu)
+{
+	int time = 10 * 1000 * 1000;
+	xrt_cu_reset(xcu);
+
+	do {
+		usleep_range(1000, 1500);
+		time -= 1000;
+		if (xrt_cu_reset_done(xcu))
+			break;
+	} while (time > 0);
+
+	if (time < 0) {
+		xcu_info(xcu, "CU(%d) Reset timeout", xcu->info.cu_idx);
+		return false;
+	}
+
+	xcu_info(xcu, "CU(%d) SW Reset done", xcu->info.cu_idx);
+	return true;
+}
+
 /**
  * process_cq() - Process completed queue
  * @xcu: Target XRT CU
@@ -77,10 +155,12 @@ static inline void process_cq(struct xrt_cu *xcu)
 	while (xcu->num_cq) {
 		xcmd = list_first_entry(&xcu->cq, struct kds_command, list);
 		set_xcmd_timestamp(xcmd, xcmd->status);
+		xrt_cu_circ_produce(xcu, CU_LOG_STAGE_CQ, (uintptr_t)xcmd);
 		xcmd->cb.notify_host(xcmd, xcmd->status);
 		list_del(&xcmd->list);
 		xcmd->cb.free(xcmd);
 		--xcu->num_cq;
+		xcu->cu_stat.usage++;
 	}
 }
 
@@ -132,6 +212,7 @@ static inline void __process_sq(struct xrt_cu *xcu)
 			/* Done command has priority */
 			xcmd->status = KDS_COMPLETED;
 			--xcu->done_cnt;
+			xrt_cu_circ_produce(xcu, CU_LOG_STAGE_SQ, (uintptr_t)xcmd);
 		} else if (unlikely(ev_client)) {
 			/* Client event happens rarely */
 			if (xcmd->client != ev_client)
@@ -149,8 +230,12 @@ static inline void __process_sq(struct xrt_cu *xcu)
 				continue;
 
 			xcmd->status = KDS_TIMEOUT;
-			/* Mark this CU as bad state */
-			xcu->bad_state = true;
+
+			if (xcu->info.sw_reset) {
+				if (!sw_reset_cu(xcu))
+					xcu->bad_state = true;
+			} else
+				xcu->bad_state = true;
 		} else
 			break;
 
@@ -214,6 +299,7 @@ static inline int process_rq(struct xrt_cu *xcu)
 	xrt_cu_config(xcu, (u32 *)xcmd->info, xcmd->isize, xcmd->payload_type);
 	xrt_cu_start(xcu);
 	set_xcmd_timestamp(xcmd, KDS_RUNNING);
+	xrt_cu_circ_produce(xcu, CU_LOG_STAGE_RQ, (uintptr_t)xcmd);
 
 	dst_q = &xcu->sq;
 	dst_len = &xcu->num_sq;
@@ -259,6 +345,101 @@ static inline void process_pq(struct xrt_cu *xcu)
 		xcu->max_running = xcu->num_rq;
 }
 
+static inline void
+try_abort_cmd(struct xrt_cu *xcu, struct kds_command *abort_cmd)
+{
+	struct kds_command *xcmd;
+	struct kds_command *tmp;
+	u32 handle;
+
+	/* Never call this function on the performance critical path */
+	handle = *(u32 *)abort_cmd->info;
+	list_for_each_entry_safe(xcmd, tmp, &xcu->rq, list) {
+		if (xcmd->exec_bo_handle != handle)
+			continue;
+
+		/* Found the xcmd to abort! */
+		abort_cmd->status = KDS_COMPLETED;
+
+		xcu_info(xcu, "Abort command(%d) on running queue", handle);
+		xcmd->status = KDS_ABORT;
+		move_to_queue(xcmd, &xcu->cq, &xcu->num_cq);
+		--xcu->num_rq;
+		return;
+	}
+
+	list_for_each_entry_safe(xcmd, tmp, &xcu->sq, list) {
+		if (xcmd->exec_bo_handle != handle)
+			continue;
+
+		xcu_info(xcu, "Abort command(%d) on submitted queue", handle);
+		/* Found the xcmd to abort! */
+		if (!xcu->info.sw_reset) {
+			xcu_warn(xcu, "No sw resset. Device goto bad state");
+			abort_cmd->status = KDS_ABORT;
+			xcu->bad_state = true;
+		} else {
+			xcu_info(xcu, "Try reset CU(%d)", xcu->info.cu_idx);
+			/* TODO: Not support CU with hardware queue.
+			 *
+			 * Since we only abort one command, not sure
+			 * what to do when this command is in hardware
+			 * queue with other commands.
+			 * In this case, if we still want to reset CU,
+			 * we need abort all of the commands on sq.
+			 * Not support this use case until we know what to do.
+			 */
+			if (sw_reset_cu(xcu)) {
+				/* re-initial this cu */
+				xrt_cu_put_credit(xcu, 1);
+
+				abort_cmd->status = KDS_COMPLETED;
+			} else {
+				abort_cmd->status = KDS_TIMEOUT;
+				xcu->bad_state = true;
+			}
+		}
+
+		xcmd->status = KDS_ABORT;
+		move_to_queue(xcmd, &xcu->cq, &xcu->num_cq);
+		--xcu->num_sq;
+
+		return;
+	}
+}
+
+/**
+ * process_hpq() - Process high priority queue
+ * @xcu: Target XRT CU
+ *
+ */
+static inline void process_hpq(struct xrt_cu *xcu)
+{
+	struct kds_command *xcmd;
+	struct kds_command *tmp;
+	unsigned long flags;
+
+	if (!xcu->num_hpq)
+		return;
+
+	/* slowpath */
+	spin_lock_irqsave(&xcu->hpq_lock, flags);
+	if (!xcu->num_hpq)
+		goto done;
+
+	list_for_each_entry_safe(xcmd, tmp, &xcu->hpq, list) {
+		if (xcmd->opcode == OP_ABORT)
+			try_abort_cmd(xcu, xcmd);
+
+		list_del(&xcmd->list);
+		--xcu->num_hpq;
+	}
+
+done:
+	spin_unlock_irqrestore(&xcu->hpq_lock, flags);
+	complete(&xcu->comp);
+}
+
 int xrt_cu_polling_thread(void *data)
 {
 	struct xrt_cu *xcu = (struct xrt_cu *)data;
@@ -282,6 +463,14 @@ int xrt_cu_polling_thread(void *data)
 		 */
 		process_cq(xcu);
 		process_sq(xcu);
+
+		/* process rare commands with very high priority. For example
+		 * abort command.
+		 * If this kind of command don't not exist, this would be a very
+		 * low overhead and should not impact performance.
+		 * But if this kind of command exist, this would be a slow path.
+		 */
+		process_hpq(xcu);
 
 		/* The idea is when CU's credit is less than busy threshold,
 		 * sleep a while to wait for CU completion.
@@ -318,6 +507,9 @@ int xrt_cu_polling_thread(void *data)
 		if (!xcu->num_sq && !xcu->num_cq) {
 			loop_cnt = 0;
 			xcu->sleep_cnt++;
+			/* Record CU status before sleep */
+			if (!xcu->num_pq)
+				xrt_cu_check_force(xcu);
 			if (down_interruptible(&xcu->sem))
 				ret = -ERESTARTSYS;
 		}
@@ -371,6 +563,7 @@ int xrt_cu_intr_thread(void *data)
 		}
 
 		process_cq(xcu);
+		process_hpq(xcu);
 
 		/* Avoid large num_rq leads to more 120 sec blocking */
 		if (++loop_cnt == 8) {
@@ -384,6 +577,9 @@ int xrt_cu_intr_thread(void *data)
 
 		if (!xcu->num_sq && !xcu->num_cq) {
 			loop_cnt = 0;
+			/* Record CU status before sleep */
+			if (!xcu->num_pq)
+				xrt_cu_check_force(xcu);
 			if (down_interruptible(&xcu->sem))
 				ret = -ERESTARTSYS;
 		}
@@ -416,6 +612,22 @@ void xrt_cu_submit(struct xrt_cu *xcu, struct kds_command *xcmd)
 	spin_unlock_irqrestore(&xcu->pq_lock, flags);
 	if (first_command)
 		up(&xcu->sem);
+}
+
+void xrt_cu_hpq_submit(struct xrt_cu *xcu, struct kds_command *xcmd)
+{
+	unsigned long flags;
+
+	/* This high priority queue is designed to handle those hight priority
+	 * but low frequency commands. Like abort command.
+	 */
+	spin_lock_irqsave(&xcu->hpq_lock, flags);
+	list_add_tail(&xcmd->list, &xcu->hpq);
+	++xcu->num_hpq;
+	spin_unlock_irqrestore(&xcu->hpq_lock, flags);
+	up(&xcu->sem);
+
+	wait_for_completion(&xcu->comp);
 }
 
 /**
@@ -483,6 +695,11 @@ int xrt_cu_cfg_update(struct xrt_cu *xcu, int intr)
 	/* Check if CU support interrupt in hardware */
 	if (!xcu->info.intr_enable)
 		return -ENOSYS;
+
+	if (xrt_cu_get_protocol(xcu) == CTRL_NONE) {
+		xcu_err(xcu, "Interrupt enabled value should be false for ap_ctrl_none cu\n");
+		return -ENOSYS;
+	}
 
 	if (intr)
 		cu_thread = xrt_cu_intr_thread;
@@ -629,6 +846,16 @@ int xrt_cu_init(struct xrt_cu *xcu)
 	xcu->run_timeout = 0;
 	sema_init(&xcu->sem, 0);
 	sema_init(&xcu->sem_cu, 0);
+
+	INIT_LIST_HEAD(&xcu->hpq);
+	spin_lock_init(&xcu->hpq_lock);
+	init_completion(&xcu->comp);
+
+	xcu->crc_buf.head = 0;
+	xcu->crc_buf.tail = 0;
+	xcu->crc_buf.buf = xcu->log_buf;
+
+	memset(&xcu->cu_stat, 0, sizeof(struct per_custat));
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 	setup_timer(&xcu->timer, cu_timer, (unsigned long)xcu);
 #else
@@ -720,6 +947,8 @@ ssize_t show_cu_info(struct xrt_cu *xcu, char *buf)
 			info->intr_enable);
 	sz += scnprintf(buf+sz, PAGE_SIZE - sz, "Interrupt ID:  %d\n",
 			info->intr_id);
+	sz += scnprintf(buf+sz, PAGE_SIZE - sz, "SW Resettable: %d\n",
+			info->sw_reset);
 
 	sz += scnprintf(buf+sz, PAGE_SIZE - sz, "--- Arguments ---\n");
 	sz += scnprintf(buf+sz, PAGE_SIZE - sz, "Number of arguments: %d\n",
@@ -747,6 +976,18 @@ ssize_t show_cu_info(struct xrt_cu *xcu, char *buf)
 	else
 		buf[PAGE_SIZE - 1] = 0;
 
+
+	return sz;
+}
+
+ssize_t show_formatted_cu_stat(struct xrt_cu *xcu, char *buf)
+{
+	ssize_t sz = 0;
+	char *fmt = "%lld %d\n";
+	int in_flight = xcu->num_sq;
+
+	sz += scnprintf(buf+sz, PAGE_SIZE - sz, fmt,
+			xcu->cu_stat.usage, in_flight);
 
 	return sz;
 }

@@ -46,7 +46,7 @@ namespace xclcpuemhal2 {
   void * remotePortMappedPointer = NULL;
   namespace pt = boost::property_tree;
 
-  bool initRemotePortMap()
+  bool initRemotePortMap(std::string fpgaDevice)
   {
     int fd;
     unsigned addr;//, page_addr , page_offset;
@@ -58,16 +58,15 @@ namespace xclcpuemhal2 {
       exit(-1);
     }
 
-#if defined(CONFIG_ARM64)
-    addr = PL_RP_MP_ALLOCATED_ADD;
-#else
-    addr = PL_RP_ALLOCATED_ADD;
-#endif
-
-    addr = 0xa4000000;// Temp. fix
-
-    //page_addr = (addr & ~(page_size - 1));
-    //page_offset = addr - page_addr;
+    if (fpgaDevice.find("versal:") != std::string::npos) {
+      addr = PL_RP_VERSAL_ALLOCATED_ADD;
+    }
+    else if (fpgaDevice.find("zynquplus:") != std::string::npos) {
+      addr = PL_RP_MP_ALLOCATED_ADD;
+    }
+    else {
+      addr = PL_RP_ALLOCATED_ADD;
+    }
 
     remotePortMappedPointer = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
       MAP_SHARED, fd, (addr & ~(page_size - 1)));
@@ -80,7 +79,7 @@ namespace xclcpuemhal2 {
     return true;
   }
 
-  bool validateXclBin(const xclBin *header, std::string &xclBinName)
+  bool validateXclBin(const xclBin *header, std::string &xclBinName, bool &deviceProcessInQemu , std::string &fpgaDevice)
   {
     char *bitstreambin = reinterpret_cast<char*> (const_cast<xclBin*> (header));
     //int result = 0; Not used. Removed to get rid of compiler warning, and probably a Coverity CID.
@@ -130,14 +129,14 @@ namespace xclcpuemhal2 {
       {
         //Give error and return from here
       }
-    }
-
+    }   
     // iterate devices
     count = 0;
     for (auto& xml_device : xml_project.get_child("project.platform"))
     {
       if (xml_device.first != "device")
         continue;
+      fpgaDevice = xml_device.second.get<std::string>("<xmlattr>.fpgaDevice");
       if (++count > 1)
       {
         //Give error and return from here
@@ -156,6 +155,10 @@ namespace xclcpuemhal2 {
       }
     }
     xclBinName = xml_project.get<std::string>("project.<xmlattr>.name", "");
+    //check for Versal,zynqmp Platforms
+    if (fpgaDevice != "" && (fpgaDevice.find("versal:") != std::string::npos || fpgaDevice.find("zynquplus:") != std::string::npos)) {
+      deviceProcessInQemu = false;
+    }
     return true;
   }
 
@@ -215,7 +218,8 @@ namespace xclcpuemhal2 {
     bUnified = _unified;
     bXPR = _xpr;
     mIsKdsSwEmu = (xclemulation::is_sw_emulation()) ? xrt_core::config::get_flag_kds_sw_emu() : false;
-    mIsAieEnabled = false;
+    mDeviceProcessInQemu = true;
+    mFpgaDevice = "";
   }
 
   size_t CpuemShim::alloc_void(size_t new_size)
@@ -515,23 +519,34 @@ namespace xclcpuemhal2 {
             xilinxInstall = std::string(installEnvvar);
           }
         }
-        char *xilinxVivadoEnvvar = getenv("XILINX_VIVADO");
-        if(xilinxVivadoEnvvar)
+        
+        char *xilinxHLSEnvVar = getenv("XILINX_HLS");
+        char *xilinxVivadoEnvVar = getenv("XILINX_VIVADO");
+
+        if (xilinxHLSEnvVar && xilinxVivadoEnvVar)
         {
-          std::string sHlsBinDir = xilinxVivadoEnvvar;
+          std::string sHlsBinDir = xilinxHLSEnvVar;
+          std::string sVivadoBinDir = xilinxVivadoEnvVar;
+
           std::string sLdLibs("");
           std::string DS("/");
           std::string sPlatform("lnx64");
+
           char* sLdLib = getenv("LD_LIBRARY_PATH");
           if (sLdLib)
             sLdLibs = std::string(sLdLib) + ":";
+
           sLdLibs += sHlsBinDir +  DS + sPlatform + DS + "tools" + DS + "fft_v9_1" + ":";
           sLdLibs += sHlsBinDir +  DS + sPlatform + DS + "tools" + DS + "fir_v7_0" + ":";
           sLdLibs += sHlsBinDir +  DS + sPlatform + DS + "tools" + DS + "fpo_v7_0" + ":";
           sLdLibs += sHlsBinDir +  DS + sPlatform + DS + "tools" + DS + "dds_v6_0" + ":";
           sLdLibs += sHlsBinDir +  DS + sPlatform + DS + "tools" + DS + "opencv"   + ":";
           sLdLibs += sHlsBinDir + DS + sPlatform + DS + "lib" + DS + "csim" + ":";
-          sLdLibs += sHlsBinDir + DS + "lib" + DS + "lnx64.o" + DS + "Default" + DS;
+          sLdLibs += sHlsBinDir + DS + "lib" + DS + "lnx64.o" + DS + "Default" + DS + ":";
+          sLdLibs += sHlsBinDir + DS + "lib" + DS + "lnx64.o" + DS + ":";
+          sLdLibs += sVivadoBinDir + DS + "lib" + DS + "lnx64.o" + DS + ":";
+          sLdLibs += sVivadoBinDir + DS + "lib" + DS + "lnx64.o" + DS + "Default" + DS;
+
           setenv("LD_LIBRARY_PATH",sLdLibs.c_str(),true);
         }
 
@@ -591,12 +606,19 @@ namespace xclcpuemhal2 {
   }
 
   int CpuemShim::xclLoadXclBin(const xclBin *header)
-  {    
-    if (isAieEnabled(header)){
-      mIsAieEnabled = true;
-      return xclLoadXclBinNewFlow(header);
+  { 
+    if (mLogStream.is_open()) mLogStream << __func__ << " begin " << std::endl;
+    std::string xclBinName = "";
+    if (!xclcpuemhal2::validateXclBin(header, xclBinName, mDeviceProcessInQemu, mFpgaDevice)) {
+      printf("ERROR:Xclbin validation failed\n");
+      return 1;
     }
-    if(mLogStream.is_open()) mLogStream << __func__ << " begin " << std::endl;
+    xclBinName = xclBinName + ".xclbin";
+    if (mLogStream.is_open()) mLogStream << " validateXclBin done :  " << xclBinName << std::endl;
+
+    if (!mDeviceProcessInQemu){
+      return xclLoadXclBinNewFlow(header);
+    }  
 
     std::string xmlFile = "" ;
     int result = dumpXML(header, xmlFile) ;
@@ -843,47 +865,24 @@ namespace xclcpuemhal2 {
     return aieFlag;
   }
 
+  void CpuemShim::socketConnection(bool isTCPSocket) {
+    if (mLogStream.is_open()) mLogStream << __func__ << "TCP connection started" << std::endl;
+    if (!sock)
+      sock = new unix_socket(isTCPSocket);
+    if (mLogStream.is_open()) mLogStream << __func__ << "TCP connection established" << std::endl;
+  }
+
   int CpuemShim::xclLoadXclBinNewFlow(const xclBin *header)
   {
-    if (mLogStream.is_open()) mLogStream << __func__ << " begin " << std::endl;
-    std::string xclBinName = "";
+    if (mLogStream.is_open()) mLogStream << __func__ << " begin " << std::endl;  
 
-    bool simDontRun = xclemulation::config::getInstance()->isDontRun();
-    if (!simDontRun) {
-      if (!xclcpuemhal2::isRemotePortMapped) {
-        xclcpuemhal2::initRemotePortMap();
-      }
-
-      if (!xclcpuemhal2::validateXclBin(header, xclBinName)) {
-        printf("ERROR:Xclbin validation failed\n");
-        return 1;
-      }
-      xclBinName = xclBinName + ".xclbin";
-      if (mLogStream.is_open()) mLogStream << " validateXclBin done :  " << xclBinName << std::endl;
-      //Send the LoadXclBin
-      PLLAUNCHER::OclCommand *cmd = new PLLAUNCHER::OclCommand();
-      cmd->setCommand(PLLAUNCHER::PL_OCL_LOADXCLBIN_ID);
-      cmd->addArg(xclBinName.c_str());
-      uint32_t length;
-      uint8_t* buff = cmd->generateBuffer(&length);
-      for (unsigned int i = 0; i < length; i += 4) {
-        uint32_t copySize = (length - i) > 4 ? 4 : length - i;
-        memcpy(((char*)(xclcpuemhal2::remotePortMappedPointer)) + i, buff + i, copySize);
-      }
-      //Send the end of packet
-      char cPacketEndChar = PL_OCL_PACKET_END_MARKER;
-      memcpy((char*)(xclcpuemhal2::remotePortMappedPointer), &cPacketEndChar, 1);
-      if (mLogStream.is_open()) mLogStream << " sendXclbintoPllauncher done :  " << xclBinName << std::endl;
-    }
-
-    std::string xmlFile = "";
     // Before we spawn off the child process, we must determine
     //  if the process will be debuggable or not.  We get that
     //  by checking to see if there is a DEBUG_DATA section in
     //  the xclbin file.  Note, this only works with xclbin2
     //  files.  Also, the GUI can overwrite this by setting an
     //  environment variable
-    bool debuggable = false;
+    std::string debugMode = "No";
     if (getenv("ENABLE_KERNEL_DEBUG") != nullptr &&
       strcmp("true", getenv("ENABLE_KERNEL_DEBUG")) == 0)
     {
@@ -894,12 +893,35 @@ namespace xclcpuemhal2 {
         auto top = reinterpret_cast<const axlf*>(header);
         auto sec = xclbin::get_axlf_section(top, DEBUG_DATA);
         if (sec)
-        {
-          debuggable = true;
+        {         
+          debugMode = "Yes";
         }
       }
     }
+    //Create thread for TCP socket connection    
+    std::thread tcpSockThread = std::thread(&CpuemShim::socketConnection, this, true);
 
+    bool simDontRun = xclemulation::config::getInstance()->isDontRun();
+    if (!simDontRun) {
+      if (!xclcpuemhal2::isRemotePortMapped) {
+        xclcpuemhal2::initRemotePortMap(mFpgaDevice);
+      }      
+      //Send the LoadXclBin
+      PLLAUNCHER::OclCommand *cmd = new PLLAUNCHER::OclCommand();
+      cmd->setCommand(PLLAUNCHER::PL_OCL_LOADXCLBIN_ID); 
+      cmd->addArg(debugMode.c_str());
+      uint32_t length;
+      uint8_t* buff = cmd->generateBuffer(&length);
+      for (unsigned int i = 0; i < length; i += 4) {
+        uint32_t copySize = (length - i) > 4 ? 4 : length - i;
+        memcpy(((char*)(xclcpuemhal2::remotePortMappedPointer)) + i, buff + i, copySize);
+      }
+      //Send the end of packet
+      char cPacketEndChar = PL_OCL_PACKET_END_MARKER;
+      memcpy((char*)(xclcpuemhal2::remotePortMappedPointer), &cPacketEndChar, 1);     
+    }
+
+    std::string xmlFile = "";
     std::string binaryDirectory("");
     //launchDeviceProcess(debuggable, binaryDirectory);
     systemUtil::makeSystemCall(deviceDirectory, systemUtil::systemOperation::CREATE);
@@ -910,9 +932,11 @@ namespace xclcpuemhal2 {
     systemUtil::makeSystemCall(binaryDirectory, systemUtil::systemOperation::CREATE);
     systemUtil::makeSystemCall(binaryDirectory, systemUtil::systemOperation::PERMISSIONS, "777");
     binaryCounter++;
-
-    if (!sock)
-      sock = new unix_socket(true);
+   
+    //Join tcp socket thread.
+    if (tcpSockThread.joinable()) {
+       tcpSockThread.join();
+    }
 
     if (header)
     {
@@ -988,6 +1012,8 @@ namespace xclcpuemhal2 {
         return -1;
       }
 
+      if (mLogStream.is_open()) mLogStream << __func__ << "Extracted xclbin data" << std::endl;
+
       if (memTopology && connectvitybuf)
       {
         auto m_mem = (reinterpret_cast<const ::mem_topology*>(memTopology.get()));
@@ -1045,6 +1071,7 @@ namespace xclcpuemhal2 {
         mSWSch = new SWScheduler(this);
         mSWSch->init_scheduler_thread();
       }
+      if (mLogStream.is_open()) mLogStream << __func__ << " xclLoadXclbinContent_RPC_CALL : started " << std::endl;
       //Send xclbin content i.e. sharedlib, xclbin xml, emudata over tcp sockets. its scoped call
       {
         bool keepdirc = xclemulation::config::getInstance()->isKeepRunDirEnabled() ? true : false;
@@ -1055,6 +1082,8 @@ namespace xclcpuemhal2 {
           return -1;
         }
       }
+
+      if (mLogStream.is_open()) mLogStream << __func__ << " xclLoadXclbinContent_RPC_CALL : done " << std::endl;
 
       bool ack = true;
       bool verbose = false;
@@ -1226,7 +1255,7 @@ namespace xclcpuemhal2 {
     }
 
     fflush(stdout);
-    xclWriteAddrKernelCtrl_RPC_CALL(xclWriteAddrKernelCtrl,space,offset,hostBuf,size,kernelArgsInfo);
+    xclWriteAddrKernelCtrl_RPC_CALL(xclWriteAddrKernelCtrl,space,offset,hostBuf,size,kernelArgsInfo,0,0);
     PRINTENDFUNC;
     return size;
   }
@@ -1257,7 +1286,7 @@ namespace xclcpuemhal2 {
       PRINTENDFUNC;
       return -1;
     }
-    xclReadAddrKernelCtrl_RPC_CALL(xclReadAddrKernelCtrl,space,offset,hostBuf,size);
+    xclReadAddrKernelCtrl_RPC_CALL(xclReadAddrKernelCtrl,space,offset,hostBuf,size,0,0);
     PRINTENDFUNC;
     return size;
 
@@ -1480,7 +1509,7 @@ namespace xclcpuemhal2 {
 
     int status = 0;
     bool simDontRun = xclemulation::config::getInstance()->isDontRun();
-    if(!simDontRun && !mIsAieEnabled)
+    if(!simDontRun && mDeviceProcessInQemu)
       while (-1 == waitpid(0, &status, 0));
 
     systemUtil::makeSystemCall(socketName, systemUtil::systemOperation::REMOVE);
@@ -2344,6 +2373,27 @@ int CpuemShim::xrtGraphWait(void * gh) {
 }
 
 /**
+* xrtGraphTimedWait() -  Wait a given AIE cycle since the last xrtGraphRun and
+*                   then stop the graph. If cycle is 0, busy wait until graph
+*                   is done. If graph already run more than the given
+*                   cycle, stop the graph immediateley.
+*/
+int CpuemShim::xrtGraphTimedWait(void * gh, uint64_t cycle) {
+  bool ack = false;
+  auto ghPtr = (xclcpuemhal2::GraphType*)gh;
+  if (!ghPtr)
+    return -1;
+  auto graphhandle = ghPtr->getGraphHandle();
+  xclGraphTimedWait_RPC_CALL(xclGraphTimedWait, graphhandle, cycle);
+  if (!ack)
+  {
+    PRINTENDFUNC;
+    return -1;
+  }
+  return 0;
+}
+
+/**
 * xrtGraphEnd() - Wait a given AIE cycle since the last xrtGraphRun and
 *                 then end the graph. If cycle is 0, busy wait until graph
 *                 is done before end the graph. If graph already run more
@@ -2365,6 +2415,56 @@ int CpuemShim::xrtGraphEnd(void * gh) {
     return -1;
   auto graphhandle = ghPtr->getGraphHandle();
   xclGraphEnd_RPC_CALL(xclGraphEnd, graphhandle);
+  if (!ack)
+  {
+    PRINTENDFUNC;
+    return -1;
+  }
+  return 0;
+}
+
+/**
+* xrtGraphTimedEnd() - Wait a given AIE cycle since the last xrtGraphRun and
+*                 then end the graph. If cycle is 0, busy wait until graph
+*                 is done before end the graph. If graph already run more
+*                 than the given cycle, stop the graph immediately and end it.
+*
+* @gh:              Handle to graph previously opened with xrtGraphOpen.
+* @cycle:           AIE cycle should wait since last xrtGraphRun. 0 for
+*                   wait until graph is done.
+*
+* Return:          0 on success, -1 on timeout.
+*
+* Note: This API with non-zero AIE cycle is for graph that is running
+* forever or graph that has multi-rate core(s).
+*/
+int CpuemShim::xrtGraphTimedEnd(void * gh , uint64_t cycle) {
+  bool ack = false;
+  auto ghPtr = (xclcpuemhal2::GraphType*)gh;
+  if (!ghPtr)
+    return -1;
+  auto graphhandle = ghPtr->getGraphHandle();
+  xclGraphTimedEnd_RPC_CALL(xclGraphTimedEnd, graphhandle, cycle);
+  if (!ack)
+  {
+    PRINTENDFUNC;
+    return -1;
+  }
+  return 0;
+}
+
+/**
+* xrtGraphResume() - Resume a suspended graph.
+*
+* Resume graph execution which was paused by suspend() or wait(cycles) APIs
+*/
+int CpuemShim::xrtGraphResume(void * gh) {
+  bool ack = false;
+  auto ghPtr = (xclcpuemhal2::GraphType*)gh;
+  if (!ghPtr)
+    return -1;
+  auto graphhandle = ghPtr->getGraphHandle();
+  xclGraphResume_RPC_CALL(xclGraphResume, graphhandle);
   if (!ack)
   {
     PRINTENDFUNC;

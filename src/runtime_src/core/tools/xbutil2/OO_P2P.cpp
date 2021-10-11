@@ -1,8 +1,8 @@
 /**
- * Copyright (C) 2020 Licensed under the Apache License, Version
- * 2.0 (the "License"). You may not use this file except in
- * compliance with the License. A copy of the License is located
- * at
+ * Copyright (C) 2020-2021 Licensed under the Apache License, 
+ * Version 2.0 (the "License"). You may not use this file except 
+ * in compliance with the License. A copy of the License is 
+ * located at 
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -298,18 +298,34 @@ OO_P2P::execute(const SubCmdOptions& _options) const
     std::cerr << "ERROR: " << e.what() << "\n\n";
 
     printHelp();
+    throw xrt_core::error(std::errc::operation_canceled);
+  }
+
+  if (m_help) {
+    printHelp();
     return;
   }
 
-  // Exit if neither action or device specified
-  if(m_help || (m_action.empty() || m_devices.empty())) {
-    printHelp();
-    return;
+  // Validate the correct action value is used
+  action_type action;
+  try {
+    action = string2action(m_action);
+  } catch (const xrt_core::generic_error &e) {
+    std::cerr << boost::format("ERROR: %s\n") % e.what();
+    throw xrt_core::error(std::errc::operation_canceled);
+  }
+
+
+  // Validate the correct action value is used
+  if (m_devices.empty()) {
+    std::cerr << boost::format("ERROR: A device needs to be specified.\n");
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // Collect all of the devices of interest
   std::set<std::string> deviceNames;
   xrt_core::device_collection deviceCollection;
+
   for (const auto & deviceName : m_devices) 
     deviceNames.insert(boost::algorithm::to_lower_copy(deviceName));
   
@@ -318,7 +334,7 @@ OO_P2P::execute(const SubCmdOptions& _options) const
   } catch (const std::runtime_error& e) {
     // Catch only the exceptions that we have generated earlier
     std::cerr << boost::format("ERROR: %s\n") % e.what();
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // enforce 1 device specification
@@ -334,6 +350,24 @@ OO_P2P::execute(const SubCmdOptions& _options) const
     throw xrt_core::error(std::errc::operation_canceled);
   }
 
-  for (auto& device : deviceCollection)
-    p2p(device.get(), string2action(m_action), false);
+  try {
+    p2p(deviceCollection[0].get(), action, XBU::getForce());
+  } catch (const xrt_core::system_error& ex) {
+    std::cerr << "ERROR: " << ex.what() << std::endl;
+    throw xrt_core::error(std::errc::operation_canceled); 
+  }
+
+  // Print success message for the user
+  switch (action) {
+    case action_type::enable:
+      std::cout <<  "Please WARM reboot the machine to enable P2P now.\n";
+      break;
+    
+    case action_type::disable:
+      std::cout << "Please WARM reboot the machine to disable P2P now.\n";
+      break;
+
+    case action_type::validate:
+      std::cout << "P2P validated successfully.\n";
+  }
 }

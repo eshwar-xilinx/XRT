@@ -75,5 +75,10 @@
 #define xclSyncBOAIENB_n 44
 #define xclGMIOWait_n 45
 #define xclLoadXclbinContent_n 46
+#define xclGraphTimedWait_n 47
+#define xclGraphTimedEnd_n 48
+#define xclGraphResume_n 49
+
+#define xclCopyBOFromFd_n 50
 
 #endif

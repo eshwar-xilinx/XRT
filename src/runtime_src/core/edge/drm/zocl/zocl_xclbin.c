@@ -752,21 +752,28 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj,
 
 	/* Check unique ID */
 	if (zocl_xclbin_same_uuid(zdev, &axlf_head.m_header.uuid)) {
-		if (is_aie_only(axlf)) {
-			write_unlock(&zdev->attr_rwlock);
-			ret = zocl_load_aie_only_pdi(zdev, axlf, xclbin,
-			    client);
-			write_lock(&zdev->attr_rwlock);
-			if (ret)
-				DRM_WARN("read xclbin: fail to load AIE");
-			else {
-				zocl_create_aie(zdev, axlf, aie_res);
-				zocl_cache_xclbin(zdev, axlf, xclbin);
+		if (!(axlf_obj->za_flags & DRM_ZOCL_FORCE_PROGRAM)) {
+			if (is_aie_only(axlf)) {
+				write_unlock(&zdev->attr_rwlock);
+				ret = zocl_load_aie_only_pdi(zdev, axlf, xclbin, client);
+				write_lock(&zdev->attr_rwlock);
+				if (ret)
+					DRM_WARN("read xclbin: fail to load AIE");
+				else {
+					write_unlock(&zdev->attr_rwlock);
+					zocl_create_aie(zdev, axlf, aie_res);
+					write_lock(&zdev->attr_rwlock);
+					zocl_cache_xclbin(zdev, axlf, xclbin);
+				}
+			} else {
+				DRM_INFO("%s The XCLBIN already loaded", __func__);
 			}
+			goto out0;
 		} else {
-			DRM_INFO("%s The XCLBIN already loaded", __func__);
+			// We come here if user sets force_xclbin_program
+			// option "true" in xrt.ini under [Runtime] section
+			DRM_WARN("%s The XCLBIN already loaded. Force xclbin download", __func__);
 		}
-		goto out0;
 	}
 
 	if (kds_mode == 0) {
@@ -829,10 +836,29 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj,
 			goto out0;
 		}
 
-		if (axlf_obj->za_flags != DRM_ZOCL_PLATFORM_PR) {
+		if (!(axlf_obj->za_flags & DRM_ZOCL_PLATFORM_PR)) {
 			DRM_INFO("disable partial bitstream download, "
 			    "axlf flags is %d", axlf_obj->za_flags);
 		} else {
+			 /*
+			  * cleanup previously loaded xclbin related data
+			  * before loading new bitstream/pdi
+			  */
+			if (kds_mode == 1 && (zocl_xclbin_get_uuid(zdev) != NULL)) {
+				subdev_destroy_cu(zdev);
+				if (zdev->aie) {
+					/*
+					 * Dont reset if aie is already in reset
+					 * state
+					 */
+					if( !zdev->aie->aie_reset) {
+						ret = zocl_aie_reset(zdev);
+						if (ret)
+							goto out0;
+					}
+					zocl_destroy_aie(zdev);
+				}
+			}
 			/*
 			 * Make sure we load PL bitstream first,
 			 * if there is one, before loading AIE PDI.
@@ -864,7 +890,7 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj,
 			goto out0;
 
 		zocl_cache_xclbin(zdev, axlf, xclbin);
-	} else if (axlf_obj->za_flags == DRM_ZOCL_PLATFORM_FLAT &&
+	} else if ((axlf_obj->za_flags & DRM_ZOCL_PLATFORM_FLAT) &&
 		   axlf_head.m_header.m_mode == XCLBIN_FLAT &&
 		   axlf_head.m_header.m_mode != XCLBIN_HW_EMU &&
 		   axlf_head.m_header.m_mode != XCLBIN_HW_EMU_PR) {
@@ -965,7 +991,9 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj,
 	zocl_init_mem(zdev, zdev->topology);
 
 	/* Createing AIE Partition */
+	write_unlock(&zdev->attr_rwlock);
 	zocl_create_aie(zdev, axlf, aie_res);
+	write_lock(&zdev->attr_rwlock);
 
 	/*
 	 * Remember xclbin_uuid for opencontext.
@@ -980,7 +1008,6 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj,
 		 */
 		write_unlock(&zdev->attr_rwlock);
 
-		subdev_destroy_cu(zdev);
 		ret = zocl_create_cu(zdev);
 		if (ret) {
 			write_lock(&zdev->attr_rwlock);
@@ -1016,7 +1043,16 @@ zocl_xclbin_hold(struct drm_zocl_dev *zdev, const xuid_t *id)
 {
 	xuid_t *xclbin_id = (xuid_t *)zocl_xclbin_get_uuid(zdev);
 
-	WARN_ON(uuid_is_null(id));
+	if (!xclbin_id) {
+		DRM_ERROR("No active xclbin. Cannot hold ");
+		return -EINVAL;
+	}
+
+	// check whether uuid is null or not
+	if (uuid_is_null(id)) {
+		DRM_WARN("NULL uuid to hold\n");
+		return -EINVAL;
+	}
 	BUG_ON(!mutex_is_locked(&zdev->zdev_xclbin_lock));
 
 	if (!uuid_equal(id, xclbin_id)) {
@@ -1047,6 +1083,11 @@ static int
 zocl_xclbin_release(struct drm_zocl_dev *zdev, const xuid_t *id)
 {
 	xuid_t *xclbin_uuid = (xuid_t *)zocl_xclbin_get_uuid(zdev);
+
+	if (!xclbin_uuid) {
+		DRM_ERROR("No active xclbin. Cannot release");
+		return -EINVAL;
+	}
 
 	BUG_ON(!mutex_is_locked(&zdev->zdev_xclbin_lock));
 

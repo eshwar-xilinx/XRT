@@ -20,6 +20,7 @@
 #define XCL_DRIVER_DLL_EXPORT  // exporting xrt_ip.h
 #define XRT_CORE_COMMON_SOURCE // in same dll as core_common
 #include "core/include/experimental/xrt_ip.h"
+#include "core/common/api/native_profile.h"
 
 #include "core/common/device.h"
 #include "core/common/config_reader.h"
@@ -146,7 +147,7 @@ class ip_impl
 
       ip = ips.front();
 
-      auto all_cus = device->get_cus(xclbin_uuid);  // sort order
+      const auto& all_cus = device->get_cus(xclbin_uuid);  // sort order
       auto itr = std::find(all_cus.begin(), all_cus.end(), ip->m_base_address);
       if (itr == all_cus.end())
         throw xrt_core::internal_error("unexpected error");
@@ -303,14 +304,18 @@ void
 ip::
 write_register(uint32_t offset, uint32_t data)
 {
-  handle->write_register(offset, data);
+  xdp::native::profiling_wrapper("xrt::ip::write_register",[this, offset, data]{
+    handle->write_register(offset, data);
+  }) ;
 }
 
 uint32_t
 ip::
 read_register(uint32_t offset) const
 {
-  return handle->read_register(offset);
+  return xdp::native::profiling_wrapper("xrt::ip::read_register", [this, offset] {
+    return handle->read_register(offset);
+  }) ;
 }
 
 xrt::ip::interrupt

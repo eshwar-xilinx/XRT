@@ -66,6 +66,8 @@ rh_package_list()
      cppcheck \
      curl \
      dkms \
+     elfutils-devel \
+     elfutils-libs \
      gcc \
      gcc-c++ \
      gdb \
@@ -77,6 +79,7 @@ rh_package_list()
      json-glib-devel \
      libcurl-devel \
      libdrm-devel \
+     libffi-devel \
      libjpeg-turbo-devel \
      libstdc++-static \
      libtiff-devel \
@@ -116,23 +119,14 @@ rh_package_list()
 
     if [ $MAJOR == 8 ]; then
 
-        RH_LIST+=(systemd-devel)
+        RH_LIST+=(\
+          systemd-devel \
+          libarchive \
+          )
 
-        if [ $FLAVOR == "centos" ]; then
-            #fix cmake issue in centos 8.*
+        if [ $FLAVOR == "rhel" ]; then
             RH_LIST+=(\
-            libarchive \
-            )
-        else
-            RH_LIST+=(\
-            opencv \
-            )
-        fi
-
-        if [ $docker == 0 ]; then
-            RH_LIST+=(\
-             kernel-devel-$(uname -r) \
-             kernel-headers-$(uname -r) \
+              opencv \
             )
         fi
 
@@ -141,8 +135,6 @@ rh_package_list()
         RH_LIST+=(\
          libpng12-devel \
          libudev-devel \
-         kernel-devel-$(uname -r) \
-         kernel-headers-$(uname -r) \
          opencv \
          openssl-static \
          protobuf-static \
@@ -150,9 +142,26 @@ rh_package_list()
 
     fi
 
+    if [ $docker == 0 ]; then
+        if [ $FLAVOR == "centos" ]; then
+        # In CentOs kernel-devel and headers with $(uname -r) version 
+        # are not available always which causes xrtdeps to fail if we 
+        # include these packages with specific version.
+            RH_LIST+=(\
+              kernel-devel \
+              kernel-headers \
+            )
+        else 
+            RH_LIST+=(\
+              kernel-devel-$(uname -r) \
+              kernel-headers-$(uname -r) \
+            )
+        fi
+    fi
+ 
     #dmidecode is only applicable for x86_64
     if [ $ARCH == "x86_64" ]; then
-	RH_LIST+=( dmidecode )
+        RH_LIST+=( dmidecode )
     fi
 }
 
@@ -174,6 +183,9 @@ ub_package_list()
      libboost-program-options-dev \
      libcurl4-openssl-dev \
      libdrm-dev \
+     libdw-dev \
+     libelf-dev \
+     libffi-dev \
      libgtest-dev \
      libjpeg-dev \
      libjson-glib-dev \
@@ -241,6 +253,8 @@ fd_package_list()
      curl \
      dkms \
      dmidecode \
+     elfutils-devel \
+     elfutils-libs \
      gcc \
      gcc-c++ \
      gdb \
@@ -254,6 +268,7 @@ fd_package_list()
      kernel-headers-$(uname -r) \
      libcurl-devel \
      libdrm-devel \
+     libffi-devel \
      libjpeg-turbo-devel \
      libpng12-devel \
      libstdc++-static \
@@ -303,7 +318,7 @@ suse_package_list()
      gcc \
      gcc-c++ \
      gdb \
-     git \
+     git-core \
      glibc-devel-static \
      gnuplot \
      json-glib-devel \
@@ -330,9 +345,8 @@ suse_package_list()
      perl \
      pkg-config \
      protobuf-devel \
-     python \
+     python3-devel \
      python3-pip \
-     rapidjson-devel \
      rpm-build \
      strace \
      unzip \
@@ -417,9 +431,6 @@ prep_rhel7()
     echo "Enabling RHEL SCL repository..."
     yum-config-manager --enable rhel-server-rhscl-7-rpms
 
-    echo "Enabling repository 'rhel-7-server-e4s-optional-rpms"
-    subscription-manager repos --enable "rhel-7-server-e4s-optional-rpms"
-
     echo "Enabling repository 'rhel-7-server-optional-rpms'"
     subscription-manager repos --enable "rhel-7-server-optional-rpms"
 }
@@ -492,6 +503,22 @@ prep_amzn()
     yum install -y ocl-icd ocl-icd-devel opencl-headers
 }
 
+prep_sles()
+{
+    echo "Preparing SLES for package dependencies..."
+
+    if [ "$VERSION" == "15.2" ]; then
+	SUSEConnect -p sle-module-desktop-applications/$VERSION/x86_64
+	SUSEConnect -p sle-module-development-tools/$VERSION/x86_64
+	SUSEConnect -p PackageHub/$VERSION/x86_64
+	zypper addrepo https://download.opensuse.org/repositories/science/SLE_15_SP2/science.repo
+	zypper addrepo https://download.opensuse.org/repositories/devel:libraries:c_c++/SLE_15_SP2/devel:libraries:c_c++.repo
+	zypper --no-gpg-checks refresh
+	zypper install -y opencl-headers ocl-icd-devel rapidjson-devel
+	zypper mr -d -f science devel_libraries_c_c++ devel_languages_python
+    fi
+}
+
 install()
 {
     if [ $FLAVOR == "ubuntu" ] || [ $FLAVOR == "debian" ]; then
@@ -512,6 +539,8 @@ install()
         prep_rhel
     elif [ $FLAVOR == "amzn" ]; then
         prep_amzn
+    elif [ $FLAVOR == "sles" ]; then
+        prep_sles
     fi
 
     if [ $FLAVOR == "rhel" ] || [ $FLAVOR == "centos" ] || [ $FLAVOR == "amzn" ]; then

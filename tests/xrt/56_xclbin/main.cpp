@@ -26,7 +26,7 @@
 #include "xrt/xrt_bo.h"
 
 // This value is shared with worgroup size in kernel.cl
-constexpr auto COUNT = 1024;
+static constexpr auto COUNT = 1024;
 
 static void
 usage()
@@ -35,6 +35,17 @@ usage()
     std::cout << "  -k <bitstream>\n";
     std::cout << "  [-h]\n\n";
     std::cout << "* Bitstream is required\n";
+}
+
+std::ostream&
+operator << (std::ostream& ostr, const xrt::xclbin::mem& mem)
+{
+  ostr << "mem tag:        " << mem.get_tag() << "\n";
+  ostr << "mem used:       " << (mem.get_used() ? "true" : "false") << "\n";
+  ostr << "mem index:      " << mem.get_index() << "\n";
+  ostr << "mem size (kb):  0x" << std::hex << mem.get_size_kb() << std::dec << "\n";
+  ostr << "mem base addr:  0x" << std::hex << mem.get_base_address() << std::dec << "\n";
+  return ostr;
 }
 
 std::ostream&
@@ -100,6 +111,9 @@ run_cpp(const std::string& xclbin_fnm)
 
   for (auto& kernel : xclbin.get_kernels())
     std::cout << kernel << '\n';
+
+  for (auto& mem : xclbin.get_mems())
+    std::cout << mem << '\n';
 }
 
 void
@@ -113,7 +127,7 @@ run_c(const std::string& xclbin_fnm)
   xrtXclbinFreeHandle(xhdl);
 }
 
-int 
+static int 
 run(int argc, char** argv)
 {
   if (argc < 3) {
@@ -155,7 +169,8 @@ run(int argc, char** argv)
   return 0;
 }
 
-int main(int argc, char** argv)
+int
+main(int argc, char** argv)
 {
   try {
     if (!run(argc, argv))

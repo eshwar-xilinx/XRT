@@ -56,6 +56,7 @@ extern "C" {
  */
 #define XLAPC_MAX_NUMBER_SLOTS           31
 #define XLAPC_STATUS_PER_SLOT            9
+#define XLAPC_STATUS_REG_NUM             4
 
 /* Metric counters per slot */
 #define XLAPC_OVERALL_STATUS                0
@@ -80,7 +81,8 @@ enum xclDebugReadType {
   XCL_DEBUG_READ_TYPE_AIM  = 2,
   XCL_DEBUG_READ_TYPE_ASM  = 3,
   XCL_DEBUG_READ_TYPE_AM   = 4,
-  XCL_DEBUG_READ_TYPE_SPC  = 5
+  XCL_DEBUG_READ_TYPE_SPC  = 5,
+  XCL_DEBUG_READ_TYPE_ADD  = 6
 };
 
 /* Debug counter results */
@@ -126,6 +128,11 @@ typedef struct {
   unsigned long long CuStartCount       [XAM_MAX_NUMBER_SLOTS];
 } xclAccelMonitorCounterResults;
 
+typedef struct {
+  unsigned int           Num;
+  unsigned int           DeadlockStatus;
+} xclAccelDeadlockDetectorResults;
+
 enum xclCheckerType {
 XCL_CHECKER_MEMORY = 0,
 XCL_CHECKER_STREAM = 1
@@ -134,8 +141,8 @@ XCL_CHECKER_STREAM = 1
 /* Debug checker results */
 typedef struct {
   unsigned int   OverallStatus[XLAPC_MAX_NUMBER_SLOTS];
-  unsigned int   CumulativeStatus[XLAPC_MAX_NUMBER_SLOTS][4];
-  unsigned int   SnapshotStatus[XLAPC_MAX_NUMBER_SLOTS][4];
+  unsigned int   CumulativeStatus[XLAPC_MAX_NUMBER_SLOTS][XLAPC_STATUS_REG_NUM];
+  unsigned int   SnapshotStatus[XLAPC_MAX_NUMBER_SLOTS][XLAPC_STATUS_REG_NUM];
   unsigned int   NumSlots;
   char DevUserName[256];
 } xclDebugCheckersResults;

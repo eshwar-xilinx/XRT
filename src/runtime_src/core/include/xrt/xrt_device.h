@@ -23,6 +23,7 @@
 #include "experimental/xrt_xclbin.h"
 
 #ifdef __cplusplus
+# include "xrt/detail/abi.h"
 # include "xrt/detail/param_traits.h"
 # include <memory>
 # include <boost/any.hpp> // std::any c++17
@@ -69,14 +70,22 @@ namespace info {
  *  True if device is a NoDMA device (bool)
  * @var offline
  *  True if device is offline and in process of being reset (bool)
- * @var power_rails
- *  Power rail sensors of device in json format (std::string)
- * @var thermals
- *  Thermal sensors of device in json format (std::string)
- * @power_consumption
- *  Power sensors of a device in json format (std::string)
- * @fans
- *  Fans of a device in json format (std::string)
+ * @var electrical
+ *  Electrical and power sensors present on the device (std::string)
+ * @var thermal
+ *  Thermal sensors present on the device (std::string)
+ * @var mechanical
+ *  Mechanical sensors on and surrounding the device (std::string)
+ * @var memory
+ *  Memory information present on the device (std::string)
+ * @var platform
+ *  Platforms flashed on the device (std::string)
+ * @var pcie_info
+ *  Pcie information of the device (std::string)
+ * @var host
+ *  Host information (std::string)
+ * @var dynamic_regions
+ *  Information about xclbin on the device (std::string)
  */
 enum class device : unsigned int {
   bdf,
@@ -87,10 +96,14 @@ enum class device : unsigned int {
   name,
   nodma,
   offline,
-  power_rails,
-  thermals,
-  power_consumption,
-  fans
+  electrical,
+  thermal,
+  mechanical, 
+  memory, 
+  platform,
+  pcie_info,
+  host, 
+  dynamic_regions
 };
 
 /// @cond 
@@ -105,10 +118,14 @@ XRT_INFO_PARAM_TRAITS(device::m2m, bool);
 XRT_INFO_PARAM_TRAITS(device::name, std::string);
 XRT_INFO_PARAM_TRAITS(device::nodma, bool);
 XRT_INFO_PARAM_TRAITS(device::offline, bool);
-XRT_INFO_PARAM_TRAITS(device::power_rails, std::string);
-XRT_INFO_PARAM_TRAITS(device::thermals, std::string);
-XRT_INFO_PARAM_TRAITS(device::power_consumption, std::string);
-XRT_INFO_PARAM_TRAITS(device::fans, std::string);
+XRT_INFO_PARAM_TRAITS(device::electrical, std::string);
+XRT_INFO_PARAM_TRAITS(device::thermal, std::string);
+XRT_INFO_PARAM_TRAITS(device::mechanical, std::string);
+XRT_INFO_PARAM_TRAITS(device::memory, std::string);
+XRT_INFO_PARAM_TRAITS(device::platform, std::string);
+XRT_INFO_PARAM_TRAITS(device::pcie_info, std::string);
+XRT_INFO_PARAM_TRAITS(device::host, std::string);
+XRT_INFO_PARAM_TRAITS(device::dynamic_regions, std::string);
 /// @endcond 
 
 } // info
@@ -232,6 +249,11 @@ public:
    * The return type of the parameter is based on the instantiated
    * param_traits for the given param enumeration supplied as template
    * argument, see namespace xrt::info
+   *
+   * This function guarantees return values conforming to the format
+   * used by the time the application was built and for a two year
+   * period minimum.  In other words, XRT can be updated to new
+   * versions without affecting the format of the return type.
    */
   template <info::device param>
   typename info::param_traits<info::device, param>::return_type
@@ -239,7 +261,7 @@ public:
   {
     return boost::any_cast<
       typename info::param_traits<info::device, param>::return_type  
-    >(get_info(param));
+    >(get_info(param, xrt::detail::abi{}));
   }
 
   /**
@@ -335,7 +357,8 @@ public:
     return handle;
   }
 
-  XCL_DRIVER_DLLESPEC void
+  XCL_DRIVER_DLLESPEC
+  void
   reset();
 
   explicit
@@ -350,10 +373,16 @@ private:
   std::pair<const char*, size_t>
   get_xclbin_section(axlf_section_kind section, const uuid& uuid) const;
 
+  // Deprecated but left for ABI compatibility of old existing
+  // binaries in the field that reference this symbol. Unused in
+  // new applications since xrt-2.12.x
   XCL_DRIVER_DLLESPEC
   boost::any
   get_info(info::device param) const;
 
+  XCL_DRIVER_DLLESPEC
+  boost::any
+  get_info(info::device param, const xrt::detail::abi&) const;
 private:
   std::shared_ptr<xrt_core::device> handle;
 };

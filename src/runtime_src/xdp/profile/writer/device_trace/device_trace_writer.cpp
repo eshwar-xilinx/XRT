@@ -92,8 +92,14 @@ namespace xdp {
     // Create structure for all CUs in the xclbin
     for (auto iter : xclbin->cus) {
       ComputeUnitInstance* cu = iter.second ;
-      fout << "Group_Start,Compute Unit " << cu->getName() 
-           << ",Activity in accelerator "<< cu->getKernelName() 
+      fout << "Group_Start,Compute Unit " << cu->getName();
+
+      if(-1 == cu->getAccelMon() && !(cu->dataTransferEnabled())
+                                 && !(cu->streamEnabled())) {
+        fout << " - No Trace";
+      }
+
+      fout << ",Activity in accelerator "<< cu->getKernelName() 
            << ":" << cu->getName() << std::endl ;
 
       writeCUExecutionStructure(xclbin, cu, rowCount) ;
@@ -102,7 +108,7 @@ namespace xdp {
 
       fout << "Group_End," << cu->getName() << std::endl ;
     }
-    // Create structure for all floating monitors not attached to a CU
+    // Create structure for all floating monitors not attached to a CU, and enabled for trace
     writeFloatingMemoryTransfersStructure(xclbin, rowCount) ;
     writeFloatingStreamTransfersStructure(xclbin, rowCount) ;
   }
@@ -111,6 +117,10 @@ namespace xdp {
                                                     ComputeUnitInstance* cu,
                                                     uint32_t& rowCount)
   {
+    if(-1 == cu->getAccelMon()) { 
+      // No trace enabled AMs are present
+      return;
+    } 
     fout << "Dynamic_Row_Summary," << ++rowCount
          << ",Executions,Execution in accelerator " 
          << cu->getName() << std::endl;
@@ -146,7 +156,7 @@ namespace xdp {
     // Generate Wave group for Read/Write if data transfer monitoring is enabled
     if (!(cu->dataTransferEnabled())) return ;
 
-    std::vector<uint32_t>* cuAIMs = cu->getAIMs() ;
+    std::vector<uint32_t>* cuAIMs = cu->getAIMsWithTrace() ;
     for (auto cuAIM : *cuAIMs) {
       Monitor* aim = (db->getStaticInfo()).getAIMonitor(deviceId, xclbin, cuAIM) ;
       if (nullptr == aim) continue ;
@@ -173,7 +183,7 @@ namespace xdp {
     // Generate Wave group for stream data transfers if enabled
     if (!(cu->streamEnabled())) return ;
 
-    std::vector<uint32_t>* cuASMs = cu->getASMs() ;
+    std::vector<uint32_t>* cuASMs = cu->getASMsWithTrace() ;
     for (auto cuASM : *cuASMs) {
       Monitor* ASM = (db->getStaticInfo()).getASMonitor(deviceId, xclbin, cuASM) ;
       if (nullptr == ASM) continue ;
@@ -192,7 +202,7 @@ namespace xdp {
 
   void DeviceTraceWriter::writeFloatingMemoryTransfersStructure(XclbinInfo* xclbin, uint32_t& rowCount)
   {
-    if (!(db->getStaticInfo().hasFloatingAIM(deviceId, xclbin))) return ;
+    if (!(db->getStaticInfo().hasFloatingAIMwithTrace(deviceId, xclbin))) return ;
     fout << "Group_Start,AXI Memory Monitors,Read/Write data transfers over AXI Memory Mapped connection " << std::endl;
 
     // Go through all of the AIMs in this xclbin to find the floating ones
@@ -229,7 +239,7 @@ namespace xdp {
 
   void DeviceTraceWriter::writeFloatingStreamTransfersStructure(XclbinInfo* xclbin, uint32_t& rowCount)
   {
-    if (!(db->getStaticInfo()).hasFloatingASM(deviceId, xclbin)) return ;
+    if (!(db->getStaticInfo()).hasFloatingASMwithTrace(deviceId, xclbin)) return ;
     fout << "Group_Start,AXI Stream Monitors,Data transfers over AXI Stream connection " << std::endl;
 
     std::map<uint64_t, Monitor*> *asmMap =

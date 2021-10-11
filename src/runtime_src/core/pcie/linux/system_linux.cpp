@@ -183,6 +183,12 @@ get_device_id(const std::string& bdf) const
       auto dev_bdf = boost::str(boost::format("%04x:%02x:%02x.%01x") % dev->domain % dev->bus % dev->dev % dev->func);
       if (dev_bdf == bdf)
         return i;
+      //consider default domain as 0000 and try to find a matching device
+      if(dev->domain == 0) {
+        dev_bdf = boost::str(boost::format("%02x:%02x.%01x") % dev->bus % dev->dev % dev->func);
+        if(dev_bdf == bdf)
+          return i;
+      }
   }
 
   throw xrt_core::system_error(EINVAL, "No such device '" + bdf + "'");
@@ -227,7 +233,7 @@ get_mgmtpf_device(device::id_type id) const
 
 void
 system_linux::
-program_plp(const device* dev, const std::vector<char> &buffer) const
+program_plp(const device* dev, const std::vector<char> &buffer, bool force) const
 {
   try {
     xrt_core::scope_value_guard<int, std::function<void()>> fd = dev->file_open("icap", O_WRONLY);

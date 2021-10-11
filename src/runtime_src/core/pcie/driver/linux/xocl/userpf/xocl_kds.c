@@ -2,7 +2,7 @@
 /*
  * Xilinx Alveo User Function Driver
  *
- * Copyright (C) 2020 Xilinx, Inc.
+ * Copyright (C) 2020-2021 Xilinx, Inc.
  *
  * Authors: min.ma@xilinx.com
  */
@@ -164,14 +164,12 @@ sk_ecmd2xcmd(struct xocl_dev *xdev, struct ert_packet *ecmd,
 	}
 
 	if (ecmd->opcode == ERT_SK_START) {
-		xcmd->opcode = OP_START_SK;
-		ecmd->type = ERT_SCU;
+		start_skrnl_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 	} else {
 		xcmd->opcode = OP_CONFIG_SK;
 		ecmd->type = ERT_CTRL;
+		xcmd->execbuf = (u32 *)ecmd;
 	}
-
-	xcmd->execbuf = (u32 *)ecmd;
 
 	return 0;
 }
@@ -277,17 +275,22 @@ xocl_open_ucu(struct xocl_dev *xdev, struct kds_client *client,
 	      struct drm_xocl_ctx *args)
 {
 	struct kds_sched *kds = &XDEV(xdev)->kds;
-	int cu_idx = args->cu_index;
+	u32 cu_idx = args->cu_index;
+	int ret;
 
 	if (!kds->cu_intr_cap) {
 		userpf_err(xdev, "Shell not support CU to host interrupt");
 		return -EOPNOTSUPP;
 	}
 
+	ret = kds_open_ucu(kds, client, cu_idx);
+	if (ret < 0)
+		return ret;
+
 	userpf_info(xdev, "User manage interrupt found, disable ERT");
 	xocl_ert_user_disable(xdev);
 
-	return kds_open_ucu(kds, client, cu_idx);
+	return 0;
 }
 
 static int xocl_context_ioctl(struct xocl_dev *xdev, void *data,
@@ -355,7 +358,7 @@ static inline void read_ert_stat(struct kds_command *xcmd)
 	/* Skip header and FPGA CU stats. off_idx points to PS kernel stats */
 	off_idx = 4 + num_cu;
 	for (i = 0; i < num_scu; i++)
-		kds->scu_mgmt.usage[i] = ecmd->data[off_idx + i];
+		kds->scu_mgmt.cu_stats->usage[i] = ecmd->data[off_idx + i];
 
 	/* off_idx points to PS kernel status */
 	off_idx += num_scu + num_cu;
@@ -482,6 +485,21 @@ static bool copy_and_validate_execbuf(struct xocl_dev *xdev,
 	return true;
 }
 
+/* This function is only used to convert ERT_EXEC_WRITE to
+ * ERT_START_KEY_VAL.
+ * The only difference is that ERT_EXEC_WRITE skip 6 words in the payload.
+ */
+static void convert_exec_write2key_val( struct ert_start_kernel_cmd *ecmd)
+{
+	/* end index of payload = count - (1 + 6) */
+	int end = ecmd->count - 7;
+	int i;
+
+	/* Shift payload 6 words up */
+	for (i = ecmd->extra_cu_masks; i < end; i++)
+		ecmd->data[i] = ecmd->data[i + 6];
+}
+
 static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 			      struct drm_file *filp, bool in_kernel)
 {
@@ -557,6 +575,7 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 	/* xcmd->u_execbuf points to user's original for write back/notice */
 	xcmd->u_execbuf = xobj->vmapping;
 	xcmd->gem_obj = obj;
+	xcmd->exec_bo_handle = args->exec_bo_handle;
 
 	print_ecmd_info(ecmd);
 
@@ -583,13 +602,14 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 		start_krnl_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 		break;
 	case ERT_EXEC_WRITE:
-		/* third argument in following function is representing number of
-		 * words to skip when writing to CU. This should be consistent
-		 * for both edge/DC, but Due to performance and some use cases
-		 * this is been decided that, DC flows skips first 6 words
-		 * whereas edge flows doesnt skip any words
-		 */
-		exec_write_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd, 6);
+		userpf_info_once(xdev, "ERT_EXEC_WRITE is obsoleted, use ERT_START_KEY_VAL\n");
+		/* PS ERT is not sync with host. Have to skip 6 data */
+		if (!xocl_ps_sched_on(xdev))
+			convert_exec_write2key_val(to_start_krnl_pkg(ecmd));
+		start_krnl_kv_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
+		break;
+	case ERT_START_KEY_VAL:
+		start_krnl_kv_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 		break;
 	case ERT_START_FA:
 		start_fa_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
@@ -618,9 +638,15 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 	case ERT_MB_VALIDATE:
 		xcmd->opcode = OP_VALIDATE;
 		break;
+	case ERT_ACCESS_TEST_C:
+		xcmd->opcode = OP_VALIDATE;
+		break;	
 	case ERT_CU_STAT:
 		xcmd->opcode = OP_GET_STAT;
 		xcmd->priv = &XDEV(xdev)->kds;
+		break;
+	case ERT_ABORT:
+		abort_ecmd2xcmd(to_abort_pkg(ecmd), xcmd);
 		break;
 	default:
 		userpf_err(xdev, "Unsupport command\n");
@@ -751,7 +777,14 @@ int xocl_client_ioctl(struct xocl_dev *xdev, int op, void *data,
 
 int xocl_init_sched(struct xocl_dev *xdev)
 {
-	return kds_init_sched(&XDEV(xdev)->kds);
+	int ret;
+	ret = kds_init_sched(&XDEV(xdev)->kds);
+	if (ret)
+		goto out;
+
+	ret = xocl_create_client(xdev, (void **)&XDEV(xdev)->kds.anon_client);
+out:
+	return ret;
 }
 
 void xocl_fini_sched(struct xocl_dev *xdev)
@@ -764,6 +797,7 @@ void xocl_fini_sched(struct xocl_dev *xdev)
 		xocl_drm_free_bo(&bo->base);
 	}
 
+	xocl_destroy_client(xdev, (void **)&XDEV(xdev)->kds.anon_client);
 	kds_fini_sched(&XDEV(xdev)->kds);
 }
 
@@ -982,6 +1016,10 @@ static int xocl_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 	if (ecmd->slot_size < regmap_size + MAX_HEADER_SIZE)
 		ecmd->slot_size = regmap_size + MAX_HEADER_SIZE;
 
+	/* PS ERT required slot size to be power of 2 */
+	if (xocl_ps_sched_on(xdev))
+		ecmd->slot_size = round_up_to_next_power2(ecmd->slot_size);
+
 	if (ecmd->slot_size > MAX_CQ_SLOT_SIZE)
 		ecmd->slot_size = MAX_CQ_SLOT_SIZE;
 	/* cfg->slot_size is for debug purpose */
@@ -1024,13 +1062,13 @@ static int xocl_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 	if (ret)
 		goto out;
 
-	if (ecmd->state > ERT_CMD_STATE_COMPLETED) {
-		userpf_err(xdev, "Cfg command state %d", ecmd->state);
-		ret = -EINVAL;
+	if (ecmd->state != ERT_CMD_STATE_COMPLETED) {
+		userpf_err(xdev, "Cfg command state %d. ERT will be disabled",
+			   ecmd->state);
+		ret = 0;
+		kds->ert_disable = true;
 		goto out;
 	}
-
-	WARN_ON(ecmd->state != ERT_CMD_STATE_COMPLETED);
 
 	/* If xrt.ini is not disabled, let it determines ERT enable/disable */
 	if (!kds->ini_disable)
@@ -1053,7 +1091,6 @@ static int xocl_scu_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 	struct config_sk_image *image;
 	struct ps_kernel_data *scu_data;
 	u32 start_cuidx = 0;
-	u32 img_idx = 0;
 	int ret = 0;
 	int i;
 
@@ -1071,10 +1108,9 @@ static int xocl_scu_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 	ecmd->type = ERT_CTRL;
 	ecmd->num_image = ps_kernel->pkn_count;
 	ecmd->count = 1 + ecmd->num_image * sizeof(*image) / 4;
-
 	for (i = 0; i < ecmd->num_image; i++) {
-		image = &ecmd->image[img_idx];
-		scu_data = &ps_kernel->pkn_data[img_idx];
+		image = &ecmd->image[i];
+		scu_data = &ps_kernel->pkn_data[i];
 
 		image->start_cuidx = start_cuidx;
 		image->num_cus = scu_data->pkd_num_instances;
@@ -1083,7 +1119,6 @@ static int xocl_scu_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 		((char *)image->sk_name)[PS_KERNEL_NAME_LENGTH - 1] = 0;
 
 		start_cuidx += image->num_cus;
-		img_idx++;
 	}
 
 	xcmd = kds_alloc_command(client, ecmd->count * sizeof(u32));
@@ -1112,7 +1147,8 @@ static int xocl_scu_cfg_cmd(struct xocl_dev *xdev, struct kds_client *client,
 
 	if (ecmd->state > ERT_CMD_STATE_COMPLETED) {
 		userpf_err(xdev, "PS kernel cfg command state %d", ecmd->state);
-		ret = -EINVAL;
+		ret = 0;
+		kds->ert_disable = true;
 	} else
 		userpf_info(xdev, "PS kernel cfg command completed");
 
@@ -1126,7 +1162,6 @@ static int xocl_config_ert(struct xocl_dev *xdev, struct drm_xocl_kds cfg)
 	struct kds_client *client;
 	struct ert_packet *ecmd;
 	struct kds_sched *kds = &XDEV(xdev)->kds;
-	pid_t pid = pid_nr(get_pid(task_pid(current)));
 	int ret = 0;
 
 	/* TODO: Use hard code size is not ideal. Let's refine this later */
@@ -1134,9 +1169,7 @@ static int xocl_config_ert(struct xocl_dev *xdev, struct drm_xocl_kds cfg)
 	if (!ecmd)
 		return -ENOMEM;
 
-	client = kds_get_client(kds, pid);
-	BUG_ON(!client);
-
+	client = kds->anon_client;
 	ret = xocl_cfg_cmd(xdev, client, ecmd, &cfg);
 	if (ret) {
 		userpf_err(xdev, "ERT config command failed");
@@ -1198,4 +1231,14 @@ int xocl_kds_update(struct xocl_dev *xdev, struct drm_xocl_kds cfg)
 
 out:
 	return ret;
+}
+
+void xocl_kds_cus_enable(struct xocl_dev *xdev)
+{
+	kds_cus_irq_enable(&XDEV(xdev)->kds, true);
+}
+
+void xocl_kds_cus_disable(struct xocl_dev *xdev)
+{
+	kds_cus_irq_enable(&XDEV(xdev)->kds, false);
 }

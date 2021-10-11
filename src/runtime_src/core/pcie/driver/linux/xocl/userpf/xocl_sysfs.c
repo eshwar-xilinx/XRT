@@ -78,18 +78,13 @@ static ssize_t xocl_errors_show(struct device *dev,
 {
 	struct xocl_dev *xdev = dev_get_drvdata(dev);
 	struct xcl_errors *err = xdev->core.errors;
-	int size = 0, i = 0;
+	int size = 0;
 	if (!err)
-		return sprintf(buf, "%s\n", "Error: Device errors not found");
+		return sprintf(buf, "%d%d, %s\n", 0, 0, "Error: Device errors not found");
 
-	size += sprintf(buf, "Num of xocl_errors: %d\n", err->num_err);
-	for (i = 0; i < err->num_err; i++) {
-		size += sprintf(buf + size, "Error# %d: PID: %d, Timestamp: %llu, Class: %llu, Module: %llu, Severity: %llu, Code: %llu\n", 
-			i, err->errors[i].pid, err->errors[i].ts, XRT_ERROR_CLASS(err->errors[i].err_code),
-			XRT_ERROR_MODULE(err->errors[i].err_code),
-			XRT_ERROR_SEVERITY(err->errors[i].err_code),
-			XRT_ERROR_NUM(err->errors[i].err_code));
-	}
+	size = sizeof(xcl_errors);
+
+	memcpy(buf, err, size);
 	return size;
 }
 static DEVICE_ATTR_RO(xocl_errors);
@@ -332,10 +327,13 @@ kds_interrupt_store(struct device *dev, struct device_attribute *da,
 	if (kds->cu_intr == cu_intr)
 		goto done;
 
-	if (cu_intr)
+	if (cu_intr) {
 		xocl_ert_user_disable(xdev);
-	else
+		xocl_kds_cus_enable(xdev);
+	} else {
+		xocl_kds_cus_disable(xdev);
 		xocl_ert_user_enable(xdev);
+	}
 
 	kds->cu_intr = cu_intr;
 	kds_cfg_update(&XDEV(xdev)->kds);
@@ -686,6 +684,19 @@ static ssize_t nodma_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(nodma);
 
+static ssize_t host_mem_size_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+	uint64_t val = 0;
+
+	if (xdev->cma_bank)
+		val = xdev->cma_bank->entry_sz * xdev->cma_bank->entry_num;
+
+	return sprintf(buf, "%lld\n", val);
+}
+static DEVICE_ATTR_RO(host_mem_size);
+
 /* - End attributes-- */
 static struct attribute *xocl_attrs[] = {
 	&dev_attr_xclbinuuid.attr,
@@ -719,6 +730,7 @@ static struct attribute *xocl_attrs[] = {
 	&dev_attr_ulp_uuids.attr,
 	&dev_attr_mig_cache_update.attr,
 	&dev_attr_nodma.attr,
+	&dev_attr_host_mem_size.attr,
 	NULL,
 };
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2020 Xilinx, Inc
+ * Copyright (C) 2019-2021 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -82,7 +82,7 @@ SubCmdProgram::execute(const SubCmdOptions& _options) const
   } catch (po::error& e) {
     std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
     printHelp(commonOptions, hiddenOptions);
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // Check to see if help was requested or no command was found
@@ -105,7 +105,7 @@ SubCmdProgram::execute(const SubCmdOptions& _options) const
       std::cout << boost::format("  [%s] : %s\n") % dev.get<std::string>("bdf") % dev.get<std::string>("vbnv");
     }
     std::cout << std::endl;
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // Collect all of the devices of interest
@@ -119,7 +119,7 @@ SubCmdProgram::execute(const SubCmdOptions& _options) const
   } catch (const std::runtime_error& e) {
     // Catch only the exceptions that we have generated earlier
     std::cerr << boost::format("ERROR: %s\n") % e.what();
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // enforce 1 device specification
@@ -139,7 +139,7 @@ SubCmdProgram::execute(const SubCmdOptions& _options) const
   if (!xclbin.empty()) {
     std::ifstream stream(xclbin, std::ios::binary);
     if (!stream)
-      throw xrt_core::error(boost::str(boost::format("Could not open %s for reding") % xclbin));
+      throw xrt_core::error(boost::str(boost::format("Could not open %s for reading") % xclbin));
 
     stream.seekg(0,stream.end);
     size_t size = stream.tellg();
@@ -156,12 +156,14 @@ SubCmdProgram::execute(const SubCmdOptions& _options) const
       auto hdl = dev->get_device_handle();
       auto bdf = xrt_core::query::pcie_bdf::to_string(xrt_core::device_query<xrt_core::query::pcie_bdf>(dev));
       if (auto err = xclLoadXclBin(hdl,reinterpret_cast<const axlf*>(raw.data())))
-        throw xrt_core::error(err, "Could not program device" + bdf);
+        throw xrt_core::error(err, "Could not program device " + bdf);
 
       std::cout << "INFO: xbutil program succeeded on " << bdf << std::endl;
     }
     return;
   }
+
   std::cout << "\nERROR: Missing program operation. No action taken.\n\n";
   printHelp(commonOptions, hiddenOptions);
+  throw xrt_core::error(std::errc::operation_canceled);
 }

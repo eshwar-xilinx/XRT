@@ -81,8 +81,7 @@ FPGA. The key user APIs are defined in ``xrt.h`` header file.
    xclbintools.rst
    xbutil.rst
    xbmgmt.rst
-   xbutil2.rst
-   xbmgmt2.rst
+   xball.rst
    xbtools_map.rst
 
 
@@ -111,6 +110,11 @@ FPGA. The key user APIs are defined in ``xrt.h`` header file.
 
    security.rst
 
+.. toctree::
+   :caption: Python binding
+   :maxdepth: 1
+
+   pyxrt.rst
 
 .. toctree::
    :caption: Debug and Faqs

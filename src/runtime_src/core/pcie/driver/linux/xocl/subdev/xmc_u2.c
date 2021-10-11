@@ -1808,7 +1808,7 @@ static ssize_t scaling_threshold_power_override_show(struct device *dev,
 	}
 	mutex_unlock(&xmc->xmc_lock);
 
-	return sprintf(buf, "%uW\n", val);
+	return sprintf(buf, "%u\n", val);
 }
 
 static ssize_t scaling_threshold_power_override_store(struct device *dev,
@@ -1903,7 +1903,7 @@ static ssize_t scaling_critical_temp_threshold_show(struct device *dev,
 		return sprintf(buf, "N/A\n");
 	}
 
-	return sprintf(buf, "%uC\n", val);
+	return sprintf(buf, "%u\n", val);
 }
 static DEVICE_ATTR_RO(scaling_critical_temp_threshold);
 
@@ -1926,7 +1926,7 @@ static ssize_t scaling_threshold_temp_limit_show(struct device *dev,
 		val = xmc_get_threshold_temp(xmc);
 	}
 
-	return sprintf(buf, "%uC\n", val);
+	return sprintf(buf, "%u\n", val);
 }
 static DEVICE_ATTR_RO(scaling_threshold_temp_limit);
 
@@ -1949,7 +1949,7 @@ static ssize_t scaling_threshold_power_limit_show(struct device *dev,
 		val = xmc_get_threshold_power(xmc);
 	}
 
-	return sprintf(buf, "%uW\n", val);
+	return sprintf(buf, "%u\n", val);
 }
 static DEVICE_ATTR_RO(scaling_threshold_power_limit);
 
@@ -1997,7 +1997,7 @@ static ssize_t scaling_threshold_temp_override_show(struct device *dev,
 	}
 	mutex_unlock(&xmc->xmc_lock);
 
-	return sprintf(buf, "%uC\n", val);
+	return sprintf(buf, "%u\n", val);
 }
 
 static ssize_t scaling_threshold_temp_override_store(struct device *dev,
@@ -2139,7 +2139,7 @@ static ssize_t scaling_enabled_store(struct device *dev,
 {
 	struct xocl_xmc *xmc = platform_get_drvdata(to_platform_device(dev));
 
-	if (strncmp(buf, "enable", strlen("enable")) == 0)
+	if (strncmp(buf, "true", strlen("true")) == 0)
 		runtime_clk_scale_enable(xmc);
 	else
 		runtime_clk_scale_disable(xmc);
@@ -4150,7 +4150,7 @@ static int xmc_access(struct platform_device *pdev, enum xocl_xmc_flags flags)
 static void clock_status_check(struct platform_device *pdev, bool *latched)
 {
 	struct xocl_xmc *xmc = platform_get_drvdata(pdev);
-	u32 status = 0;
+	u32 status = 0, val, temp, pwr, temp_t;
 
 	if (!xmc->sc_presence) {
 		/*
@@ -4162,12 +4162,12 @@ static void clock_status_check(struct platform_device *pdev, bool *latched)
 		status = READ_RUNTIME_CS(xmc, XMC_CLOCK_SCALING_CLOCK_STATUS_REG);
 
 		if (status & XMC_CLOCK_SCALING_CLOCK_STATUS_CLKS_LOW) {
-			u32 val = READ_RUNTIME_CS(xmc, XMC_CLOCK_SCALING_TEMP_REG);
-			u32 temp = val & XMC_CLOCK_SCALING_TEMP_TARGET_MASK;
+			val = READ_RUNTIME_CS(xmc, XMC_CLOCK_SCALING_TEMP_REG);
+			temp = val & XMC_CLOCK_SCALING_TEMP_TARGET_MASK;
 			val = READ_RUNTIME_CS(xmc, XMC_CLOCK_SCALING_POWER_REG);
-			u32 pwr = val & XMC_CLOCK_SCALING_POWER_TARGET_MASK;
+			pwr = val & XMC_CLOCK_SCALING_POWER_TARGET_MASK;
 			val = READ_RUNTIME_CS(xmc, XMC_CLOCK_SCALING_THRESHOLD_REG);
-			u32 temp_t = val & XMC_CLOCK_SCALING_TEMP_THRESHOLD_MASK;
+			temp_t = val & XMC_CLOCK_SCALING_TEMP_THRESHOLD_MASK;
 			val = (val >> XMC_CLOCK_SCALING_POWER_THRESHOLD_POS) &
 				XMC_CLOCK_SCALING_POWER_THRESHOLD_MASK;
 			xocl_warn(&pdev->dev, "Kernel clocks are running at lowest possible frequency"
@@ -4179,9 +4179,7 @@ static void clock_status_check(struct platform_device *pdev, bool *latched)
 
 		if (status & XMC_CLOCK_SCALING_CLOCK_STATUS_SHUTDOWN) {
 			xocl_err(&pdev->dev, "Critical temperature event, "
-					"kernel clocks have been stopped, run "
-					"'xbutil validate -q' to continue. "
-					"See AR 73398 for more details.");
+					"kernel clocks have been stopped.");
 			/* explicitly indicate reset should be latched */
 			*latched = true;
 		}

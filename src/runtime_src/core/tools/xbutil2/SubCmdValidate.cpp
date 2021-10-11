@@ -18,9 +18,10 @@
 // Local - Include Files
 #include "SubCmdValidate.h"
 #include "tools/common/Report.h"
-#include "tools/common/ReportHost.h"
+#include "tools/common/ReportPlatforms.h"
 #include "tools/common/XBUtilities.h"
 #include "tools/common/XBHelpMenus.h"
+#include "core/common/utils.h"
 #include "core/tools/common/ProgressBar.h"
 #include "core/tools/common/EscapeCodes.h"
 #include "core/tools/common/Process.h"
@@ -262,7 +263,8 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
     static const std::map<std::string, std::string> test_map = {
       { "22_verify.py",             "validate.exe"    },
       { "23_bandwidth.py",          "kernel_bw.exe"   },
-      { "host_mem_23_bandwidth.py", "slavebridge.exe" },
+      { "versal_23_bandwidth.py",   "kernel_bw.exe"   },
+      { "host_mem_23_bandwidth.py", "hostmemory.exe"  },
       { "xcl_vcu_test.exe",         "xcl_vcu_test.exe"},
       { "xcl_iops_test.exe",        "xcl_iops_test.exe"}
     };
@@ -286,7 +288,7 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
     logger(_ptTest, "Testcase", xrtTestCasePath);
 
     boost::filesystem::path test_dir(xclbinPath);
-    std::vector<std::string> args = { test_dir.parent_path().string(),
+    std::vector<std::string> args = { "-p", test_dir.parent_path().string(),
                                       "-d", xrt_core::query::pcie_bdf::to_string(xrt_core::device_query<xrt_core::query::pcie_bdf>(_dev)) };
     try {
       int exit_code = XBU::runScript("sh", xrtTestCasePath, args, "Running Test", "Test Duration", MAX_TEST_DURATION, os_stdout, os_stderr, true);
@@ -331,13 +333,13 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
       if (exit_code == EOPNOTSUPP) {
         _ptTest.put("status", "skipped");
       }
-      else if (exit_code == EXIT_FAILURE) {
+      else if (exit_code == EXIT_SUCCESS) {
+        _ptTest.put("status", "passed");
+      }
+      else {
         logger(_ptTest, "Error", os_stdout.str());
         logger(_ptTest, "Error", os_stderr.str());
         _ptTest.put("status", "failed");
-      }
-      else {
-        _ptTest.put("status", "passed");
       }
     } catch (const std::exception& e) {
       logger(_ptTest, "Error", e.what());
@@ -347,10 +349,20 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
 
   // Get out max thruput for bandwidth testcase
   if(xclbin.compare("bandwidth.xclbin") == 0) {
+    // old testcases where we have "Maximum throughput:"
     size_t st = os_stdout.str().find("Maximum");
     if (st != std::string::npos) {
       size_t end = os_stdout.str().find("\n", st);
       logger(_ptTest, "Details", os_stdout.str().substr(st, end - st));
+    }
+    else {
+      // new test cases to find "Throughput (Type: {...}) (Bank count: {...}):"
+      auto str = os_stdout.str().find("Throughput", 0);
+      while(str != std::string::npos) {
+        auto end = os_stdout.str().find("\n", str);
+        logger(_ptTest, "Details", os_stdout.str().substr(str, end - str));
+        str = os_stdout.str().find("Throughput" , end);
+      }
     }
   }
 
@@ -527,34 +539,24 @@ p2ptest_bank(xclDeviceHandle handle, boost::property_tree::ptree& _ptTest, std::
     return false;
   }
 
-  int counter = 0;
-  XBU::ProgressBar run_test("Running Test on " + m_tag, 1024, XBU::is_escape_codes_disabled(), std::cout);
   if(no_dma != 0) {
      if(!p2ptest_chunk_no_dma(handle, boh,  mem_size,  mem_idx)){
        _ptTest.put("status", "failed");
       logger(_ptTest, "Error", boost::str(boost::format("P2P failed  on memory index %d")  % mem_idx));
       free_unmap_bo(handle, boh, boptr, bo_size);
-      run_test.finish(false, "");
-      std::cout << EscapeCodes::cursor().prev_line() << EscapeCodes::cursor().clear_line();
       return false;
      }
-  run_test.update(++counter);
   } else {
     for(uint64_t c = 0; c < bo_size; c += chunk_size) {
       if(!p2ptest_chunk(handle, boptr + c, addr + c, chunk_size)) {
         _ptTest.put("status", "failed");
         logger(_ptTest, "Error", boost::str(boost::format("P2P failed at offset 0x%x, on memory index %d") % c % mem_idx));
         free_unmap_bo(handle, boh, boptr, bo_size);
-        run_test.finish(false, "");
-        std::cout << EscapeCodes::cursor().prev_line() << EscapeCodes::cursor().clear_line();
         return false;
       }
-     run_test.update(++counter);
     }
   } 
   free_unmap_bo(handle, boh, boptr, bo_size);
-  run_test.finish(true, "");
-  std::cout << EscapeCodes::cursor().prev_line() << EscapeCodes::cursor().clear_line();
   _ptTest.put("status", "passed");
   return true;
 }
@@ -727,7 +729,7 @@ bist_alloc_execbuf_and_wait(xclDeviceHandle handle, enum ert_cmd_opcode opcode, 
     return false;
   }
 
-  auto ecmd = reinterpret_cast<ert_validate_cmd*>(boptr);
+  auto ecmd = reinterpret_cast<ert_packet*>(boptr);
 
   std::memset(ecmd, 0, bo_size);
   ecmd->opcode = opcode;
@@ -776,6 +778,10 @@ clock_calibration(const std::shared_ptr<xrt_core::device>& _dev, xclDeviceHandle
 static bool
 ert_validate(const std::shared_ptr<xrt_core::device>& _dev, xclDeviceHandle handle, boost::property_tree::ptree& _ptTest)
 {
+
+  if(!bist_alloc_execbuf_and_wait(handle, ERT_ACCESS_TEST_C, _ptTest))
+    return false;
+
   if(!bist_alloc_execbuf_and_wait(handle, ERT_MB_VALIDATE, _ptTest))
     return false;
 
@@ -783,11 +789,13 @@ ert_validate(const std::shared_ptr<xrt_core::device>& _dev, xclDeviceHandle hand
   auto cq_read_cnt = xrt_core::device_query<xrt_core::query::ert_cq_read>(_dev);
   auto cu_write_cnt = xrt_core::device_query<xrt_core::query::ert_cu_write>(_dev);
   auto cu_read_cnt = xrt_core::device_query<xrt_core::query::ert_cu_read>(_dev);
+  auto data_integrity = xrt_core::device_query<xrt_core::query::ert_data_integrity>(_dev);
 
   logger(_ptTest, "Details",  boost::str(boost::format("CQ read %4d bytes: %4d cycles") % 4 % cq_read_cnt));
   logger(_ptTest, "Details",  boost::str(boost::format("CQ write%4d bytes: %4d cycles") % 4 % cq_write_cnt));
   logger(_ptTest, "Details",  boost::str(boost::format("CU read %4d bytes: %4d cycles") % 4 % cu_read_cnt));
   logger(_ptTest, "Details",  boost::str(boost::format("CU write%4d bytes: %4d cycles") % 4 % cu_write_cnt));
+  logger(_ptTest, "Details",  boost::str(boost::format("Data Integrity Test:   %s") % xrt_core::query::ert_data_integrity::to_string(data_integrity)));
 
   const uint32_t go_sleep = 1, wake_up = 0;
   xrt_core::device_update<xrt_core::query::ert_sleep>(_dev.get(), go_sleep);
@@ -1002,7 +1010,13 @@ p2pTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
 
   std::string msg;
   XBU::xclbin_lock xclbin_lock(_dev);
-  XBU::check_p2p_config(_dev.get(), msg);
+  std::vector<std::string> config;
+  try {
+    config = xrt_core::device_query<xrt_core::query::p2p_config>(_dev);
+  }
+  catch (const xrt_core::query::exception&) {  }
+
+  std::tie(std::ignore, msg) = xrt_core::query::p2p_config::parse(config);
 
   if(msg.find("Error") == 0) {
     logger(_ptTest, "Error", msg.substr(msg.find(':')+1));
@@ -1024,6 +1038,9 @@ p2pTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
   auto mem_topo = reinterpret_cast<const mem_topology*>(membuf.data());
   std::string name = xrt_core::device_query<xrt_core::query::rom_vbnv>(_dev);
 
+  //TO-DO: introduce busy bar so that we don't have to worry about ProgressBar size
+  int counter = 0;
+  XBU::ProgressBar run_test("Running Test", 256, XBU::is_escape_codes_disabled(), std::cout);
   for (auto& mem : boost::make_iterator_range(mem_topo->m_mem_data, mem_topo->m_mem_data + mem_topo->m_count)) {
     auto midx = std::distance(mem_topo->m_mem_data, &mem);
     std::vector<std::string> sup_list = { "HBM", "bank", "DDR" };
@@ -1034,12 +1051,20 @@ p2pTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
     const std::string mem_tag(reinterpret_cast<const char *>(mem.m_tag));
     for(const auto& x : sup_list) {
       if(mem_tag.find(x) != std::string::npos && mem.m_used) {
-        if(!p2ptest_bank(_dev->get_device_handle(), _ptTest, mem_tag, static_cast<unsigned int>(midx), mem.m_base_address, mem.m_size << 10, no_dma))
-          break;
-        logger(_ptTest, "Details", mem_tag +  " validated");
+        if(!p2ptest_bank(_dev->get_device_handle(), _ptTest, mem_tag, static_cast<unsigned int>(midx), mem.m_base_address, mem.m_size << 10, no_dma)){
+           break;
+	}
+	else {
+          run_test.update(++counter);
+          logger(_ptTest, "Details", mem_tag +  " validated");
+       }
       }
     }
   }
+  run_test.finish(true, "");
+ 
+  if (XBU::is_escape_codes_disabled() == true) 
+    std::cout << EscapeCodes::cursor().prev_line() << EscapeCodes::cursor().clear_line();
 }
 
 /*
@@ -1111,16 +1136,16 @@ m2mTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
 void
 hostMemBandwidthKernelTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptree& _ptTest)
 {
-  uint64_t host_mem_size = 0;
+  uint64_t shared_host_mem = 0;
   try {
-    host_mem_size = xrt_core::device_query<xrt_core::query::host_mem_size>(_dev);
+    shared_host_mem = xrt_core::device_query<xrt_core::query::shared_host_mem>(_dev);
   } catch(...) {
     logger(_ptTest, "Details", "Address translator IP is not available");
     _ptTest.put("status", "skipped");
     return;
   }
 
-  if (!host_mem_size) {
+  if (!shared_host_mem) {
       logger(_ptTest, "Details", "Host memory is not enabled");
       _ptTest.put("status", "skipped");
       return;
@@ -1322,7 +1347,9 @@ print_status(test_status status, std::ostream & _ostream)
     _ostream << "Validation completed";
   if (status == test_status::warning)
     _ostream << ", but with warnings";
-  _ostream << ". Please run the command '--verbose' option for more details" << std::endl;
+  if(!XBU::getVerbose())
+    _ostream << ". Please run the command '--verbose' option for more details";
+  _ostream << std::endl;
 }
 
 /*
@@ -1337,9 +1364,24 @@ get_platform_info(const std::shared_ptr<xrt_core::device>& device,
 {
   auto bdf = xrt_core::device_query<xrt_core::query::pcie_bdf>(device);
   ptTree.put("device_id", xrt_core::query::pcie_bdf::to_string(bdf));
-  ptTree.put("platform", xrt_core::device_query<xrt_core::query::rom_vbnv>(device));
-  ptTree.put("sc_version", xrt_core::device_query<xrt_core::query::xmc_sc_version>(device));
-  ptTree.put("platform_id", (boost::format("0x%x") % xrt_core::device_query<xrt_core::query::rom_time_since_epoch>(device)));
+
+  boost::property_tree::ptree platform_report;
+  const boost::property_tree::ptree empty_ptree;
+  auto report = std::make_shared<ReportPlatforms>();
+  report->getPropertyTreeInternal(device.get(), platform_report);
+  
+  const boost::property_tree::ptree& platforms = platform_report.get_child("platforms", empty_ptree);
+  if(platforms.size() > 1)
+    throw xrt_core::error(std::errc::operation_canceled);
+
+  for(auto& kp : platforms) {
+    const boost::property_tree::ptree& pt_platform = kp.second;
+    const boost::property_tree::ptree& pt_static_region = pt_platform.get_child("static_region", empty_ptree);
+    ptTree.put("platform", pt_static_region.get<std::string>("vbnv", "N/A"));
+    ptTree.put("platform_id", pt_static_region.get<std::string>("logic_uuid", "N/A"));
+    ptTree.put("sc_version", pt_platform.get<std::string>("controller.satellite_controller.version", "N/A"));
+
+  }
 
   // Text output
   oStream << boost::format("%-26s: [%s]\n") % "Validate Device" % ptTree.get<std::string>("device_id");
@@ -1348,7 +1390,7 @@ get_platform_info(const std::shared_ptr<xrt_core::device>& device,
   oStream << boost::format("    %-22s: %s\n") % "Platform ID" % ptTree.get<std::string>("platform_id");
 }
 
-static void
+static test_status
 run_test_suite_device( const std::shared_ptr<xrt_core::device>& device,
                        Report::SchemaVersion schemaVersion,
                        std::vector<TestCollection *> testObjectsToRun,
@@ -1399,162 +1441,17 @@ run_test_suite_device( const std::shared_ptr<xrt_core::device>& device,
 
   ptDeviceInfo.put_child("tests", ptDeviceTestSuite);
   ptDevCollectionTestSuite.push_back( std::make_pair("", ptDeviceInfo) );
+
+  return status;
 }
 
-static
-std::string quote_name(const std::string & name)
-{
-  if (name.find(' ') == std::string::npos)
-    return name;
-
-  return std::string("\'") + name + std::string("\'");
-}
-
-static
-void smart_tab_format( const unsigned int max_length,
-                       const std::string & new_entry,
-                       std::vector<std::string> & formatted_lines)
-{
-  // First time through?
-  if (formatted_lines.size() == 0) {
-    formatted_lines.push_back(new_entry);
-    return;
-  }
-
-  // Add a comma
-  unsigned int current_index = static_cast<unsigned int>(formatted_lines.size()) - 1;
-  formatted_lines[current_index] += ", ";
-
-  // Determine if we need to add the new_entry to the existing or new line
-  if ((formatted_lines[current_index].length() + new_entry.length()) > max_length)
-    formatted_lines.push_back(new_entry);
-  else
-    formatted_lines[current_index] += new_entry;
-}
-
-static void
-create_report_summary( const boost::property_tree::ptree& ptDevCollectionTestSuite,
-                       std::ostream &_ostream) {
-  // Convert the "logical_devices" array into an vector of child trees
-  std::vector<boost::property_tree::ptree> devices = XBU::as_vector<boost::property_tree::ptree>(ptDevCollectionTestSuite, "logical_devices");
-
-  // Data formats
-  static const unsigned int maxTabLength = 64;
-  static boost::format passFmt(   "  - [%-11s] : %-25s");
-  static boost::format warnFmt(   "  - [%-11s] : %-25s : Test(s): %s");
-  static boost::format failedFmt( "  - [%-11s] : %-25s : First failure: %s");
-  static boost::format skippedFmt("  - [%-11s] : %-25s : Test(s): %s");
-  static boost::format testNextLine("\n%58s%s");
-
-  // Collect the data
-  std::vector<std::string> validatedSuccessfully;
-  std::vector<std::string> validateWithExceptions;
-  std::vector<std::string> validateWithWarnings;
-  std::vector<std::string> validatedWithSkippedTests;
-
-  // Look at each device
-  for (const auto & device : devices) {
-    const std::string & device_id = device.get<std::string>("device_id");
-    const std::string & platform = device.get<std::string>("platform");
-    std::vector<boost::property_tree::ptree> tests = XBU::as_vector<boost::property_tree::ptree>(device, "tests");
-
-    // -- Failed Tests --
-    std::vector<boost::property_tree::ptree> failedTests;
-    std::copy_if(tests.begin(), tests.end(),  std::back_inserter(failedTests), [](boost::property_tree::ptree &pt){return pt.get<std::string>("status") == "failed";});
-
-    for (const auto &test : failedTests) {
-      const std::string test_name = quote_name(test.get<std::string>("name"));
-      validateWithExceptions.push_back(boost::str(failedFmt % device_id % platform % test_name));
-      break;
-    }
-
-    // -- Skipped Tests --
-    std::vector<boost::property_tree::ptree> skippedTests;
-    std::copy_if(tests.begin(), tests.end(),  std::back_inserter(skippedTests), [](boost::property_tree::ptree &pt){return pt.get<std::string>("status") == "skipped";});
-
-    // Now format the skipped the tests
-    std::vector<std::string> tabSkippedTests;
-    for (const auto &test : skippedTests)
-      smart_tab_format(maxTabLength, quote_name(test.get<std::string>("name")), tabSkippedTests);
-
-    std::string skippedTestStr;
-    for (const auto & entry: tabSkippedTests)
-      if (skippedTestStr.empty())
-        skippedTestStr = boost::str(skippedFmt % device_id % platform % entry);
-      else
-        skippedTestStr += boost::str(testNextLine % "" % entry);
-
-    if (!skippedTestStr.empty())
-      validatedWithSkippedTests.push_back(skippedTestStr);
-
-    // -- Passed Tests --
-    std::vector<boost::property_tree::ptree> passTests;
-    std::copy_if(tests.begin(), tests.end(),  std::back_inserter(passTests), [](boost::property_tree::ptree &pt){return pt.get<std::string>("status") == "passed";});
-
-    if ((passTests.size() > 0) &&
-        (failedTests.size() == 0)) {            // There must not be any failures
-      validatedSuccessfully.push_back(boost::str(passFmt % device_id % platform));
-    }
-
-    // -- Warnings --
-    std::vector<std::string> warningTests;
-    for (const auto &test : passTests) {
-      std::vector<boost::property_tree::ptree> entries = XBU::as_vector<boost::property_tree::ptree>(test, "log");
-
-      for (const auto &entry : entries) {
-        if (entry.get<std::string>("Warning","").length() == 0)
-          continue;
-
-         warningTests.push_back(quote_name(test.get<std::string>("name")));
-         break;
-        }
-      }
-
-      std::string warningTestsStr;
-      for (const auto & entry: warningTests)
-        if (warningTestsStr.empty())
-          warningTestsStr = boost::str(warnFmt % device_id % platform % entry);
-        else
-          warningTestsStr += boost::str(testNextLine % "" % entry);
-
-      if (!warningTestsStr.empty())
-        validateWithWarnings.push_back(warningTestsStr);
-  }
-
-  // -- Report the data collected
-  _ostream << std::endl;
-  _ostream << "Validation Summary" << std::endl;
-  _ostream << "------------------" << std::endl;
-
-  _ostream << boost::format("%-2d device(s) evaluated") % devices.size() << std::endl;
-  _ostream << boost::format("%-2d device(s) validated successfully") % validatedSuccessfully.size() << std::endl;
-  _ostream << boost::format("%-2d device(s) had exceptions during validation") % validateWithExceptions.size() << std::endl;
-
-  _ostream << boost::format("\nValidated successfully [%d device(s)]") % validatedSuccessfully.size() << std::endl;
-  for (const auto &entry : validatedSuccessfully)
-    _ostream << entry << std::endl;
-
-  _ostream << boost::format("\nValidation Exceptions [%d device(s)]") % validateWithExceptions.size() << std::endl;
-  for (const auto &entry : validateWithExceptions)
-    _ostream << entry << std::endl;
-
-  _ostream << boost::format("\nWarnings produced during test [%d device(s)] (Note: The given test successfully validated)") % validateWithWarnings.size() << std::endl;
-  for (const auto &entry : validateWithWarnings)
-    _ostream << entry << std::endl;
-
-  if (XBU::getVerbose()) {
-    _ostream << boost::format("\nUnsupported tests [%d device(s)]") % validatedWithSkippedTests.size() << std::endl;
-    for (const auto &entry : validatedWithSkippedTests)
-      _ostream << entry << std::endl;
-  }
-}
-
-static void
+static bool
 run_tests_on_devices( xrt_core::device_collection &deviceCollection,
                       Report::SchemaVersion schemaVersion,
                       std::vector<TestCollection *> testObjectsToRun,
                       std::ostream & output)
 {
+  bool has_failures = false;
   // -- Root property tree
   boost::property_tree::ptree ptDevCollectionTestSuite;
 
@@ -1563,14 +1460,10 @@ run_tests_on_devices( xrt_core::device_collection &deviceCollection,
 
   // -- Run the various tests and collect the test data
   boost::property_tree::ptree ptDeviceTested;
-  for(auto const& dev : deviceCollection)
-    run_test_suite_device(dev, schemaVersion, testObjectsToRun, ptDeviceTested);
+  for(auto const& dev : deviceCollection) 
+    has_failures |= (run_test_suite_device(dev, schemaVersion, testObjectsToRun, ptDeviceTested) == test_status::failed);
 
   ptDevCollectionTestSuite.put_child("logical_devices", ptDeviceTested);
-
-  // -- Create summary report
-  // Note: The report summary is only associated with the human readable format
-  create_report_summary(ptDevCollectionTestSuite, std::cout);
 
   // -- Write the formatted output
   switch (schemaVersion) {
@@ -1582,6 +1475,8 @@ run_tests_on_devices( xrt_core::device_collection &deviceCollection,
       // Do nothing
       break;
   }
+
+  return has_failures;
 }
 
 }
@@ -1663,7 +1558,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
   } catch (po::error& e) {
     std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
     printHelp(commonOptions, hiddenOptions);
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // Check to see if help was requested or no command was found
@@ -1721,7 +1616,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
     // Catch only the exceptions that we have generated earlier
     std::cerr << boost::format("ERROR: %s\n") % e.what();
     printHelp(commonOptions, hiddenOptions);
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
 
@@ -1735,7 +1630,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
     XBU::collect_devices(deviceNames, true /*inUserDomain*/, deviceCollection);
   } catch (const std::runtime_error& e) {
     std::cerr << boost::format("ERROR: %s\n") % e.what();
-    return;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // enforce 1 device specification
@@ -1781,7 +1676,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
 
   // -- Run the tests --------------------------------------------------
   std::ostringstream oSchemaOutput;
-  run_tests_on_devices(deviceCollection, schemaVersion, testObjectsToRun, oSchemaOutput);
+  bool has_failures = run_tests_on_devices(deviceCollection, schemaVersion, testObjectsToRun, oSchemaOutput);
 
   // -- Write output file ----------------------------------------------
   if (!sOutput.empty()) {
@@ -1794,4 +1689,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
 
     std::cout << boost::format("Successfully wrote the %s file: %s") % sFormat % sOutput << std::endl;
   }
+
+  if (has_failures == true) 
+    throw xrt_core::error(std::errc::operation_canceled);
 }

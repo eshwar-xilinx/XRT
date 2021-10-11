@@ -20,10 +20,7 @@
 #include "flash/flasher.h"
 #include "flash/firmware_image.h"
 #include "core/common/query_requests.h"
-
-// Utilities
-#include "tools/common/XBUtilities.h"
-namespace XBU = XBUtilities;
+#include "core/common/utils.h"
 
 // 3rd Party Library - Include Files
 #include <boost/format.hpp>
@@ -119,7 +116,8 @@ same_shell(const std::string& vbnv, const std::string& id,
 static bool 
 same_sc(const std::string& sc, const DSAInfo& installed) 
 {
-  return ((sc.empty()) || (installed.bmcVer == sc) || (sc.find("FIXED") != std::string::npos));
+  return ((sc.empty()) || (installed.bmcVer.empty()) || 
+          (installed.bmcVer == sc) || (sc.find("FIXED") != std::string::npos));
 }
 
 /*
@@ -138,15 +136,17 @@ get_installed_partitions(std::string interface_uuid)
     pt_plp.put("vbnv", installedDSA.name);
 
     //the first UUID is always the logic UUID
-    std::string uuid = installedDSA.uuids.empty() ? "" : XBU::string_to_UUID(installedDSA.uuids[0]);
-    pt_plp.put("logic-uuid", uuid);
+    std::string luuid = installedDSA.uuids.empty()
+      ? ""
+      : xrt_core::query::interface_uuids::to_uuid_upper_string(installedDSA.uuids[0]);
+    pt_plp.put("logic-uuid", luuid);
 
     // Find the UUID that it exposes for other partitions
     for(unsigned int j = 1; j < installedDSA.uuids.size(); j++){
       //check if the interface UUID is resolution of BLP
       if(interface_uuid.compare(installedDSA.uuids[j]) != 0)
         continue;
-      pt_plp.put("interface-uuid", XBU::string_to_UUID(installedDSA.uuids[j]));
+      pt_plp.put("interface-uuid", xrt_core::query::interface_uuids::to_uuid_upper_string(installedDSA.uuids[j]));
     }
     pt_plp.put("file", installedDSA.file);
 
@@ -203,26 +203,22 @@ ReportPlatform::getPropertyTree20202( const xrt_core::device * device,
     std::string vbnv = "xilinx_" + board_name + "_GOLDEN_" + std::to_string( mGoldenVer);
     pt_current_shell.put("vbnv", vbnv);
   } else if(!logic_uuids.empty() && !interface_uuids.empty()) { // 2RP
-    try {
-      DSAInfo part("", NULL_TIMESTAMP, logic_uuids[0], "");
-      pt_current_shell.put("vbnv", part.name);
-      pt_current_shell.put("logic-uuid", XBU::string_to_UUID(logic_uuids[0]));
-      pt_current_shell.put("interface-uuid", XBU::string_to_UUID(interface_uuids[0]));
-      pt_current_shell.put("id", (boost::format("0x%x") % part.timestamp));
-    } catch (...) {
-      //safe to ignore exceptions. We print out whatever information that is available to us
-    }
+    DSAInfo part("", NULL_TIMESTAMP, logic_uuids[0], "");
+    pt_current_shell.put("vbnv", (part.name).empty() ? xrt_core::device_query<xrt_core::query::rom_vbnv>(device) : part.name);
+    pt_current_shell.put("logic-uuid", xrt_core::query::interface_uuids::to_uuid_upper_string(logic_uuids[0]));
+    pt_current_shell.put("interface-uuid", xrt_core::query::interface_uuids::to_uuid_upper_string(interface_uuids[0]));
+    pt_current_shell.put("id", (boost::format("0x%x") % part.timestamp));
 
-      boost::property_tree::ptree pt_plps;
-      for(unsigned int i = 1; i < logic_uuids.size(); i++) {
-        boost::property_tree::ptree pt_plp;
-        DSAInfo partition("", NULL_TIMESTAMP, logic_uuids[i], ""); 
-        pt_plp.put("vbnv", partition.name);
-        pt_plp.put("logic-uuid", XBU::string_to_UUID(logic_uuids[i]));
-        pt_plp.put("interface-uuid", XBU::string_to_UUID(interface_uuids[i]));
-        pt_plps.push_back( std::make_pair("", pt_plp) );
-      }
-      pt_platform.put_child("current_partitions", pt_plps);
+    boost::property_tree::ptree pt_plps;
+    for(unsigned int i = 1; i < logic_uuids.size(); i++) {
+      boost::property_tree::ptree pt_plp;
+      DSAInfo partition("", NULL_TIMESTAMP, logic_uuids[i], ""); 
+      pt_plp.put("vbnv", partition.name);
+      pt_plp.put("logic-uuid", xrt_core::query::interface_uuids::to_uuid_upper_string(logic_uuids[i]));
+      pt_plp.put("interface-uuid", xrt_core::query::interface_uuids::to_uuid_upper_string(interface_uuids[i]));
+      pt_plps.push_back( std::make_pair("", pt_plp) );
+    }
+    pt_platform.put_child("current_partitions", pt_plps);
   } else { //1RP
     pt_current_shell.put("vbnv", xrt_core::device_query<xrt_core::query::rom_vbnv>(device));
     pt_current_shell.put("id", (boost::format("0x%x") % xrt_core::device_query<xrt_core::query::rom_time_since_epoch>(device)));
@@ -248,8 +244,10 @@ ReportPlatform::getPropertyTree20202( const xrt_core::device * device,
     pt_available_shell.put("vbnv", installedDSA.name);
     pt_available_shell.put("sc_version", installedDSA.bmcVer);
     pt_available_shell.put("id", (boost::format("0x%x") % installedDSA.timestamp));
-        //the first UUID is always the logic UUID
-    std::string uuid = installedDSA.uuids.empty() ? "" : XBU::string_to_UUID(installedDSA.uuids[0]);
+    //the first UUID is always the logic UUID
+    std::string uuid = installedDSA.uuids.empty()
+      ? ""
+      : xrt_core::query::interface_uuids::to_uuid_upper_string(installedDSA.uuids[0]);
     pt_available_shell.put("logic-uuid", uuid);
     pt_available_shell.put("file", installedDSA.file);
 
@@ -300,22 +298,26 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
                              const std::vector<std::string>& /*_elementsFilter*/,
                              std::ostream & _output) const
 {
+  auto string_or_NA =[](std::string str) {
+    return str.empty() ? "N/A" : str;
+  };
+
   _output << "Flash properties\n";
-  _output << fmtBasic % "Type" % _pt.get<std::string>("platform.flash_type", "N/A");
-  _output << fmtBasic % "Serial Number" % _pt.get<std::string>("platform.hardware.serial_num", "N/A");
+  _output << fmtBasic % "Type" % string_or_NA(_pt.get<std::string>("platform.flash_type"));
+  _output << fmtBasic % "Serial Number" % string_or_NA(_pt.get<std::string>("platform.hardware.serial_num"));
   _output << std::endl;
 
   const boost::property_tree::ptree& dev_properties = _pt.get_child("platform.device_properties");
   _output << "Device properties\n";
-  _output << fmtBasic % "Type" % dev_properties.get<std::string>("board_type", "N/A");
-  _output << fmtBasic % "Name" % dev_properties.get<std::string>("board_name", "N/A");
-  _output << fmtBasic % "Config Mode" % dev_properties.get<std::string>("config_mode", "N/A");
-  _output << fmtBasic % "Max Power" % dev_properties.get<std::string>("max_power_watts", "N/A");
+  _output << fmtBasic % "Type" % string_or_NA(dev_properties.get<std::string>("board_type"));
+  _output << fmtBasic % "Name" % string_or_NA(dev_properties.get<std::string>("board_name"));
+  _output << fmtBasic % "Config Mode" % string_or_NA(dev_properties.get<std::string>("config_mode"));
+  _output << fmtBasic % "Max Power" % string_or_NA(dev_properties.get<std::string>("max_power_watts"));
   _output << std::endl;
 
   _output << "Flashable partitions running on FPGA\n";
-  _output << fmtBasic % "Platform" % _pt.get<std::string>("platform.current_shell.vbnv", "N/A");
-  _output << fmtBasic % "SC Version" % _pt.get<std::string>("platform.current_shell.sc_version", "N/A");
+  _output << fmtBasic % "Platform" % string_or_NA(_pt.get<std::string>("platform.current_shell.vbnv"));
+  _output << fmtBasic % "SC Version" % string_or_NA(_pt.get<std::string>("platform.current_shell.sc_version"));
 
   // print platform ID, for 2RP, platform ID = logic UUID 
   auto logic_uuid = _pt.get<std::string>("platform.current_shell.logic-uuid", "");
@@ -324,7 +326,7 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
     _output << fmtBasic % "Platform UUID" % logic_uuid;
     _output << fmtBasic % "Interface UUID" % interface_uuid;
   } else {
-    _output << fmtBasic % "Platform ID" % _pt.get<std::string>("platform.current_shell.id", "N/A");
+    _output << fmtBasic % "Platform ID" % string_or_NA(_pt.get<std::string>("platform.current_shell.id", ""));
   }
   _output << std::endl;
 
@@ -334,9 +336,9 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
   const boost::property_tree::ptree& plps = _pt.get_child("platform.current_partitions", pt_empty);
   for(auto& kv : plps) {
     const boost::property_tree::ptree& plp = kv.second;
-    _output << fmtBasic % "Platform" % plp.get<std::string>("vbnv", "N/A");
-    _output << fmtBasic % "Logic UUID" % plp.get<std::string>("logic-uuid", "N/A");
-    _output << fmtBasic % "Interface UUID" % plp.get<std::string>("interface-uuid", "N/A");
+    _output << fmtBasic % "Platform" % string_or_NA(plp.get<std::string>("vbnv"));
+    _output << fmtBasic % "Logic UUID" % string_or_NA(plp.get<std::string>("logic-uuid"));
+    _output << fmtBasic % "Interface UUID" % string_or_NA(plp.get<std::string>("interface-uuid"));
     _output << std::endl;
   }
 
@@ -348,14 +350,14 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
   
   for(auto& kv : available_shells) {
     const boost::property_tree::ptree& available_shell = kv.second;
-    _output << fmtBasic % "Platform" % available_shell.get<std::string>("vbnv", "N/A");
-    _output << fmtBasic % "SC Version" % available_shell.get<std::string>("sc_version", "N/A");
+    _output << fmtBasic % "Platform" % string_or_NA(available_shell.get<std::string>("vbnv"));
+    _output << fmtBasic % "SC Version" % string_or_NA(available_shell.get<std::string>("sc_version"));
     // print platform ID, for 2RP, platform ID = logic UUID 
     auto platform_uuid = available_shell.get<std::string>("logic-uuid", "");
     if (!platform_uuid.empty()) {
       _output << fmtBasic % "Platform UUID" % platform_uuid;
     } else {
-      _output << fmtBasic % "Platform ID" % available_shell.get<std::string>("id", "N/A");
+      _output << fmtBasic % "Platform ID" % string_or_NA(available_shell.get<std::string>("id"));
     }
       _output << std::endl;
   }
@@ -364,9 +366,9 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
   const boost::property_tree::ptree& available_plps = _pt.get_child("platform.available_partitions", pt_empty);
   for(auto& kv : available_plps) {
     const boost::property_tree::ptree& plp = kv.second;
-    _output << fmtBasic % "Platform" % plp.get<std::string>("vbnv", "N/A");
-    _output << fmtBasic % "Logic UUID" % plp.get<std::string>("logic-uuid", "N/A");
-    _output << fmtBasic % "Interface UUID" % plp.get<std::string>("interface-uuid", "N/A");
+    _output << fmtBasic % "Platform" % string_or_NA(plp.get<std::string>("vbnv"));
+    _output << fmtBasic % "Logic UUID" % string_or_NA(plp.get<std::string>("logic-uuid"));
+    _output << fmtBasic % "Interface UUID" % string_or_NA(plp.get<std::string>("interface-uuid"));
     _output << std::endl;
   }
 
@@ -376,7 +378,7 @@ ReportPlatform::writeReport( const xrt_core::device* /*_pDevice*/,
     std::string formattedStr;
     
     for(auto & km : macs) 
-      formattedStr += boost::str(fmtBasic % (formattedStr.empty() ? "Mac Address" : "") % km.second.get<std::string>("address", "N/A"));
+      formattedStr += boost::str(fmtBasic % (formattedStr.empty() ? "Mac Address" : "") % string_or_NA(km.second.get<std::string>("address")));
     _output << formattedStr << std::endl;
   }
 
