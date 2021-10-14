@@ -11,3 +11,4 @@ jobs:
     - name: Test workflow
       run: |
          echo "Test is working"
+         bash /home/sdausr/actions-runner/teset.sh
