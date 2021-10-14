@@ -8,10 +8,10 @@ jobs:
     runs-on: p_pipeline
     steps:
 
+    - name: second run
+      run: |
+         bash /home/sdausr/draft_script1.sh
     - name: Test workflow
       run: |
          echo "Test is working"
          bash /home/sdausr/actions-runner/teset.sh
-    - name: second run
-      run: |
-         bash /home/sdausr/draft_script1.sh
