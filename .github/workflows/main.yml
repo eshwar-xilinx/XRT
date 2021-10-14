@@ -12,3 +12,6 @@ jobs:
       run: |
          echo "Test is working"
          bash /home/sdausr/actions-runner/teset.sh
+    - name: second run
+      run: |
+         bash /home/sdausr/draft_script1.sh
