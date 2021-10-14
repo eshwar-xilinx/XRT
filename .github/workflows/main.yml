@@ -4,14 +4,10 @@ on:
   pull_request:
 
 jobs:
-  binary_check:
+  main:
     runs-on: p_pipeline
     steps:
 
-    - name: Install Dependencies
-      run: |
-        sudo apt update
-        sudo apt install jq curl
-    - name: Binary Check
+    - name: Test workflow
       run: |
          echo "Test is working"
