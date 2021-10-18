@@ -16,7 +16,9 @@ jobs:
          cd 
          rm -rf XRT
          git clone "https://github.com/eshwar-xilinx/XRT.git"
+         cd XRT
          git checkout pr/$PR_NUMBER
+         touch PR_Successful
          
     - name: Test workflow
       run: |
