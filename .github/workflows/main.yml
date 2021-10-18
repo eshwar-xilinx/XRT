@@ -17,7 +17,8 @@ jobs:
          rm -rf XRT
          git clone "https://github.com/eshwar-xilinx/XRT.git"
          cd XRT
-         git checkout pr/$PR_NUMBER
+         git fetch origin pull/$PR_NUMBER/head:master
+         git checkout master
          touch PR_Successful
          
     - name: Test workflow
