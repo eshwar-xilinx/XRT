@@ -8,9 +8,14 @@ jobs:
     runs-on: p_pipeline
     steps:
 
-    - name: second run
+    - name: fetching pr details
       run: |
-         bash /home/sdausr/draft_script1.sh
+         echo "$GITHUB_REF"
+         PR_NUMBER=$(echo $GITHUB_REF | awk 'BEGIN { FS = "/" } ; { print $3 }')
+         echo "$PR_NUMBER"
+         git clone "https://github.com/eshwar-xilinx/XRT.git"
+         gr pr checkout $PR_NUMBER
+         
     - name: Test workflow
       run: |
          echo "Test is working"
