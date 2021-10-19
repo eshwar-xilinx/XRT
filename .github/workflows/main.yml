@@ -33,30 +33,31 @@ jobs:
     - name: Removing pre-existed XRT folder if present
       run: |
           rm -rf XRT/
-          echo "$(ls) are the files present"
+          echo "$(ls | grep -i XRT) are the files present"
           
     - name: Cloning XRT
       run: |
          git clone "https://github.com/eshwar-xilinx/XRT.git"
          
-    - name: Changing directory 
-      run: |
-         cd XRT
-         
-    - name: Fetching to PR branch
-      run: |
-         git fetch origin pull/${{github.event.pull_request.number}}/head:master1
-     
-    - name: Checkout PR branch
-      run: |
-         git checkout master1
-         
-    - name: Running XRT deps for dependencies
-      run: |
-          DIR_PATH=$(readlink -f .)
-          sudo $DIR_PATH/src/runtime_src/tools/scripts/xrtdeps.sh
-          
-    - name: Building deb/rpm
-      run: |
-          DIR_PATH=$(readlink -f .)
-          sudo $DIR_PATH/build/build.sh
+#    - name: Changing directory
+#      run: |
+#         cd XRT
+#        
+#    - name: Fetching to PR branch
+#      run: |
+#         git fetch origin pull/${{github.event.pull_request.number}}/head:master1
+#    
+#    - name: Checkout PR branch
+#      run: |
+#         git checkout master1
+#        
+#    - name: Running XRT deps for dependencies
+#      run: |
+#          DIR_PATH=$(readlink -f .)
+#          sudo $DIR_PATH/src/runtime_src/tools/scripts/xrtdeps.sh
+#         
+#    - name: Building deb/rpm
+#      run: |
+#          DIR_PATH=$(readlink -f .)
+#          sudo $DIR_PATH/build/build.sh
+~                                         
