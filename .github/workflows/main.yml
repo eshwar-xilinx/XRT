@@ -25,6 +25,8 @@ jobs:
           
     - name: Removing pre-existed XRT folder if present
       run: |
+          echo "$(readlink -f .) is current dj directory"
+          echo "$(ls -al) are files in dir"
           rm -rf XRT/
           echo "$(ls | grep -i XRT) are the files present"
           
