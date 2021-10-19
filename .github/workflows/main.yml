@@ -21,6 +21,7 @@ jobs:
       run: |
           cd 
           echo "$(readlink -f .) is the current directory"
+          echo "$(ls -al) are files present in directory"
           
     - name: Removing pre-existed XRT folder if present
       run: |
