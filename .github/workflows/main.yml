@@ -18,8 +18,3 @@ jobs:
          git checkout master1
          ./src/runtime_src/tools/scripts/xrtdeps.sh
          ./build/build.sh
-         
-    - name: Test workflow
-      run: |
-         echo "Test is working"
-         bash /home/sdausr/actions-runner/teset.sh
