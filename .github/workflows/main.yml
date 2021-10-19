@@ -18,5 +18,4 @@ jobs:
          cd XRT
          git fetch origin pull/${{github.event.pull_request.number}}/head:master1
          git checkout master1
-         ./src/runtime_src/tools/scripts/xrtdeps.sh
-         ./build/build.sh
+         echo $USER
