@@ -29,6 +29,9 @@ jobs:
           cd 
           rm -rf XRT/
           echo "$(ls) are the files present"
+          echo "$GITHUB_WORKSPACE is the workspace"
+          echo "$GITHUB_EVENT_PATH is the event path"
+          echo "$HOME is the homw path"
           
     - name: Cloning XRT
       run: |
