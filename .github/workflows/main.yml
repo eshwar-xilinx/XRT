@@ -5,14 +5,6 @@ on:
 
 jobs:
 
-#  vm_creation:
-#    runs-on: p_pipeline
-#    steps:
-#    - name: refreshing vm
-#      run: |
-#          echo "Reverting the machine back to original state"
-#          virsh shutdown vm_name
-#          virsh snapshot-revert  --domain ubuntu18.04 --snapshotname ubuntu_snapshot --running
     
   main:
 #    needs: vm_creation
@@ -39,25 +31,3 @@ jobs:
       run: |
          git clone "https://github.com/eshwar-xilinx/XRT.git"
          
-#    - name: Changing directory
-#      run: |
-#         cd XRT
-#        
-#    - name: Fetching to PR branch
-#      run: |
-#         git fetch origin pull/${{github.event.pull_request.number}}/head:master1
-#    
-#    - name: Checkout PR branch
-#      run: |
-#         git checkout master1
-#        
-#    - name: Running XRT deps for dependencies
-#      run: |
-#          DIR_PATH=$(readlink -f .)
-#          sudo $DIR_PATH/src/runtime_src/tools/scripts/xrtdeps.sh
-#         
-#    - name: Building deb/rpm
-#      run: |
-#          DIR_PATH=$(readlink -f .)
-#          sudo $DIR_PATH/build/build.sh
-~                                         
