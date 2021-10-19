@@ -17,6 +17,7 @@ jobs:
     - name: Changing to working directory
       run: |
           cd 
+          echo "$(readlink -f .) is the current directory"
           
     - name: Removing pre-existed XRT folder if present
       run: |
