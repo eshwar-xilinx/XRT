@@ -10,6 +10,7 @@ jobs:
     - name: refreshing vm
       run: |
           echo "${{github.event.pull_request.number}} is the PR number"
+          echo "$(readlink -f .) is the current path"
           ./launch_vm.sh
 
   main:
