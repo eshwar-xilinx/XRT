@@ -12,7 +12,7 @@ jobs:
           echo "${{github.event.pull_request.number}} is the PR number"
           echo "$(readlink -f .) is the current path"
           sudo virsh list
-          ./launch_vm.sh
+          sudo ./launch_vm.sh
 
 #  main:
 #    needs: vm_creation
