@@ -16,6 +16,7 @@ jobs:
     needs: vm_creation
     runs-on: pr_pipeline
     steps:
+    - uses: actions/checkout@v2
     - name: XRT
       run: |
           echo "Building deb/rpm packages"
