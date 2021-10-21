@@ -23,6 +23,7 @@ jobs:
       run: |
           echo "Building deb/rpm packages"
           echo $GITHUB_WORKSPACE
-          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
-          ./install_xrt.sh
-          ./test_xrt.sh
+          sudo echo $USER
+          sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+          sudo ./install_xrt.sh
+          sudo ./test_xrt.sh
