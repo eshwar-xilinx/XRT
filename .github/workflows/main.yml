@@ -18,10 +18,11 @@ jobs:
     needs: vm_creation
     runs-on: pr_pipeline
     steps:
-    - uses: actions/checkout@v2
+#    - uses: actions/checkout@v2
     - name: XRT
       run: |
           echo "Building deb/rpm packages"
+          echo $GITHUB_WORKSPACE
           ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
           ./install_xrt.sh
           ./test_xrt.sh
