@@ -4,26 +4,27 @@ on:
   pull_request:
 
 jobs:
-  vm_creation:
+  vm_revert:
     runs-on: p_pipeline
     steps:
     - name: refreshing vm
       run: |
-          echo "${{github.event.pull_request.number}} is the PR number"
-          echo "$(readlink -f .) is the current path"
-          sudo virsh list
           sudo ./launch_vm.sh
 
   main:
-    needs: vm_creation
+    needs: vm_revert
     runs-on: pr_pipeline
     steps:
-#    - uses: actions/checkout@v2
     - name: XRT
       run: |
-          echo "Building deb/rpm packages"
-          echo $GITHUB_WORKSPACE
-          sudo echo $USER
           sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
           sudo ./install_xrt.sh
           sudo ./test_xrt.sh
+  dettach:
+    if: ${{ always() }}
+    needs: main
+    runs-on: p_pipeline
+    steps:
+    - name: dettach_card
+      run: |
+          sudo ./dettach_card.sh
