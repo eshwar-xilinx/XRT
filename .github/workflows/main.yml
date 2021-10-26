@@ -20,6 +20,8 @@ jobs:
           sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
           sudo ./install_xrt.sh
           sudo ./test_xrt.sh
+      working-directory: /home/eshwar/
+     
   dettach:
     if: ${{ always() }}
     needs: main
