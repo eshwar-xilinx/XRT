@@ -13,7 +13,10 @@ jobs:
 
   main:
     needs: vm_revert
-    runs-on: pr_pipeline
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ pr_pipeline, pr2_pipeline ]
     steps:
     - name: XRT
       run: |
