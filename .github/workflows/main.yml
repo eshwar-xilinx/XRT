@@ -17,6 +17,7 @@ jobs:
     strategy:
       matrix:
         os: [ pr_pipeline, pr2_pipeline ]
+      fail-fast: false
     steps:
     - name: XRT
       run: |
