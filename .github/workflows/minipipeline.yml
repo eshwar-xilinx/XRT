@@ -6,6 +6,9 @@ on:
 jobs:
   vm_creation:
     runs-on: enclave_host
+    defaults:
+      run:
+        working-directory: /home/sdausr
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
@@ -17,6 +20,9 @@ jobs:
   verification:
     needs: vm_creation
     runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        working-directory: /home/eshwar
     timeout-minutes: 50
     strategy:
       matrix:
@@ -45,12 +51,14 @@ jobs:
       timeout-minutes: 10
       run: |
           sudo ./stress_drivers.sh
-      working-directory: /home/eshwar/
      
   dettach:
     if: ${{ always() }}
     needs: verification
-    runs-on: enclave host
+    runs-on: enclave_host
+    defaults:
+      run:
+        working-directory: /home/sdausr
     steps:
     - name: dettach_card
       run: |
