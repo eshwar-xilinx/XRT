@@ -1,0 +1,52 @@
+name: Mini Pipeline
+
+on:     
+  pull_request:
+
+jobs:
+  vm_creation:
+    runs-on: enclave_host
+    steps:
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+          sudo ./create_vm.sh
+    - name: Attaching Cards to VM
+      run: | 
+          sudo ./attach_cards.sh
+
+  verification:
+    needs: vm_creation
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ u200_7.8, u50_18.04 ]
+      fail-fast: false
+    steps:
+    - name: build XRT
+      run: |
+          sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+    - name: install XRT
+      run: |
+          sudo ./install_xrt.sh
+    - name: reset card
+      run: |
+          sudo ./reset_card.sh
+    - name: examine card
+      run: |
+          sudo ./examine.sh
+    - name: validate card
+      run: |
+          sudo ./validate.sh
+    - name: drivers reloading
+      run: |
+          sudo ./stress_drivers.sh
+      working-directory: /home/eshwar/
+     
+  dettach:
+    if: ${{ always() }}
+    needs: verification
+    runs-on: enclave host
+    steps:
+    - name: dettach_card
+      run: |
+          sudo ./dettach_card.sh
