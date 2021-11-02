@@ -30,15 +30,19 @@ jobs:
       run: |
           sudo ./install_xrt.sh
     - name: reset card
+      timeout-minutes: 5
       run: |
           sudo ./reset_card.sh
     - name: examine card
+      timeout-minutes: 5
       run: |
           sudo ./examine.sh
     - name: validate card
+      timeout-minutes: 5
       run: |
           sudo ./validate.sh
     - name: drivers reloading
+      timeout-minutes: 10
       run: |
           sudo ./stress_drivers.sh
       working-directory: /home/eshwar/
