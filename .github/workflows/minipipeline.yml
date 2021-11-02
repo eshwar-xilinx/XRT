@@ -40,14 +40,17 @@ jobs:
       run: |
           sudo ./reset_card.sh
     - name: examine card
+      if: always()
       timeout-minutes: 5
       run: |
           sudo ./examine.sh
     - name: validate card
+      if: always()
       timeout-minutes: 5
       run: |
           sudo ./validate.sh
     - name: drivers reloading
+      if: always()
       timeout-minutes: 10
       run: |
           sudo ./stress_drivers.sh
