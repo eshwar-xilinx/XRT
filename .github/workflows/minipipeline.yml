@@ -17,6 +17,7 @@ jobs:
   verification:
     needs: vm_creation
     runs-on: ${{matrix.os}}
+    timeout-minutes: 50
     strategy:
       matrix:
         os: [ u200_7.8, u50_18.04 ]
