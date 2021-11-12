@@ -6,18 +6,13 @@ name: XRT pipeline
 on:
 
   pull_request:
-    branches: [ master ]
-
-  workflow_dispatch:
 
 jobs:
-
-  build:
-    runs-on: p_pipeline
+  main:
+    runs-on: enclave_host
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
-
       # Runs a set of commands using the runners shell
       - name: vm creation
         run: |
@@ -31,5 +26,19 @@ jobs:
       - name: Install XRT
         run: .github/scripts/install_xrt.sh
         
-      - name: Test XRT
-        run: .github/scripts/validate_xrt.sh
+      - name: reset card
+        timeout-minutes: 5
+        run: |
+          sudo .github/scripts/reset_card.sh
+          
+      - name: examine card
+        if: always()
+        timeout-minutes: 5
+        run: |
+          sudo ./github/scripts/examine.sh
+          
+      - name: validate card
+        if: always()
+        timeout-minutes: 5
+        run: |
+            sudo ./github/scripts/validate.sh
