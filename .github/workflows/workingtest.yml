@@ -1,0 +1,32 @@
+# This is a basic workflow to help you get started with Actions
+
+name: XRT pipeline
+
+# Controls when the workflow will run
+on:
+  pull_request:
+
+jobs:
+  first:
+    runs-on: enclave_host
+    steps:
+      - name: first job
+        run: |
+            echo "This is first job"
+            sleep 5m
+  main:
+    needs: first
+    runs-on: ubuntu-latest
+    steps:
+      - name: dependent
+        run: |
+            echo "this is the dependent job"
+            sleep 10m
+  last:
+    needs: main
+    runs-on: enclave_host
+    steps:
+      - name: last job
+        run: |
+            echo " this is the last job
+            sleep 5m
