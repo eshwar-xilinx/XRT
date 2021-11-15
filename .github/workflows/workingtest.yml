@@ -13,17 +13,14 @@ jobs:
     steps:
       - name: check for the lock
         run: |
-          while($LOCK_ENCLAVE == "true")
-          do
-          sleep 20m
-          done
+          .github/scripts/checkforlock.sh
   first:
     runs-on: enclave_host
     needs: lock
     steps:
       - name: first job
         run: |
-          echo "LOCK_ENCLAVE = $(echo "true")" >> $LOCK_ENCLAVE
+          echo "LOCK_ENCLAVE=true" >> $GITHUB_ENV
           echo "This is first job"
           sleep 5m
   main:
@@ -40,6 +37,6 @@ jobs:
     steps:
       - name: last job
         run: |
-          echo "LOCK_ENCLAVE = $(echo "false")" >> $LOCK_ENCLAVE
+          echo "LOCK_ENCLAVE=false" >> $GITHUB_ENV
           echo "this is the last job"
           sleep 5m
