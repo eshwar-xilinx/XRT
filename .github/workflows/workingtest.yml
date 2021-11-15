@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: check for the lock
         run: |
-          while($LOCK_ENCLAVE)
+          while($LOCK_ENCLAVE == "true")
           do
           sleep 20m
           done
@@ -21,6 +21,7 @@ jobs:
     steps:
       - name: first job
         run: |
+          echo "LOCK_ENCLAVE = $(echo "true")" >> $LOCK_ENCLAVE
           echo "This is first job"
           sleep 5m
   main:
@@ -37,5 +38,6 @@ jobs:
     steps:
       - name: last job
         run: |
-          echo " this is the last job
+          echo "LOCK_ENCLAVE = $(echo "false")" >> $LOCK_ENCLAVE
+          echo "this is the last job"
           sleep 5m
