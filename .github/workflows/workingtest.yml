@@ -7,7 +7,8 @@ on:
   pull_request:
 
 jobs:
-  lock: check for the lock
+
+  lock:
     runs-on: ubuntu-latest
     steps:
       - name: check for the lock
