@@ -1,0 +1,78 @@
+
+name: Pipeline
+
+on:
+  pull_request:
+
+jobs:
+ build:
+   runs-on: enclave_host
+   defaults:
+      run:
+        working-directory: /home/sdausr/mini_pipeline
+   steps:
+     - name: Initialisation
+       run: |
+         sudo ./create_vm.sh
+     - name: Attaching Cards to VM
+       run: | 
+         sudo ./attach_cards.sh
+         
+############################ Steps for Ubuntu18.04 ####################################
+     - name: build XRT
+       run: |
+          sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+     - name: install XRT
+       run: |
+          sudo ./install_xrt.sh
+     - name: reset card
+       timeout-minutes: 5
+       run: |
+          sudo ./reset_card.sh
+     - name: examine card
+       if: always()
+       timeout-minutes: 5
+       run: |
+          sudo ./examine.sh
+     - name: validate card
+       if: always()
+       timeout-minutes: 5
+       run: |
+          sudo ./validate.sh
+     - name: dettach_card
+       run: |
+          sudo ./dettach_card.sh
+          
+#########################  Steps for CentOS7.8  #######################################
+     - name: build XRT centos7.8
+       run: |
+          sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+     - name: install XRT centos7.8
+       run: |
+          sudo ./install_xrt.sh
+     - name: reset card centos7.8
+       timeout-minutes: 5
+       run: |
+          sudo ./reset_card.sh
+     - name: examine card centos7.8
+       if: always()
+       timeout-minutes: 5
+       run: |
+          sudo ./examine.sh
+     - name: validate card centos7.8
+       if: always()
+       timeout-minutes: 5
+       run: |
+          sudo ./validate.sh
+     - name: drivers reloading centos7.8
+       if: always()
+       timeout-minutes: 10
+       run: |
+          sudo ./stress_drivers.sh
+          
+#################################################################################################
+#      Dettach the cards attached to the VM. If not removed, next PR is going to be affected.   #
+#################################################################################################
+     - name: dettach_card 
+       run: |
+          sudo ./dettach_card.sh
