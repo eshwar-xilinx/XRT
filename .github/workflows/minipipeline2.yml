@@ -20,29 +20,26 @@ jobs:
          
 ############################ Steps for Ubuntu18.04 ####################################
 
-     - name: build XRT
+     - name: build XRT Ubuntu18.04
        run: |
           sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
-     - name: install XRT
+     - name: install XRT Ubuntu18.04
        run: |
           sudo ./install_xrt.sh
-     - name: reset card
+     - name: reset card Ubuntu18.04
        timeout-minutes: 5
        run: |
           sudo ./reset_card.sh
-     - name: examine card
+     - name: examine card Ubuntu18.04
        if: always()
        timeout-minutes: 5
        run: |
           sudo ./examine.sh
-     - name: validate card
+     - name: validate card Ubuntu18.04
        if: always()
        timeout-minutes: 5
        run: |
           sudo ./validate.sh
-     - name: dettach_card
-       run: |
-          sudo ./dettach_card.sh
           
 #########################  Steps for CentOS7.8  #######################################
 
@@ -66,11 +63,6 @@ jobs:
        timeout-minutes: 5
        run: |
           sudo ./validate.sh
-     - name: drivers reloading centos7.8
-       if: always()
-       timeout-minutes: 10
-       run: |
-          sudo ./stress_drivers.sh
           
 #################################################################################################
 #      Dettach the cards attached to the VM. If not removed, next PR is going to be affected.   #
