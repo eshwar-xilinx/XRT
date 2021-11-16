@@ -23,52 +23,52 @@ jobs:
      - name: build XRT Ubuntu18.04
        if: always()
        run: |
-          ${{secret.SSH}} ${UBUNTU_1804} ./build_xrt.sh "--pr_id" "${{github.event.pull_request.number}}"
+          ${{secret.SSH}} ${UBUNTU_1804} < build_xrt.sh "--pr_id" "${{github.event.pull_request.number}}"
      - name: install XRT Ubuntu18.04
        if: always()
        run: |
-          ${{secret.SSH}} ${UBUNTU_1804} ./install_xrt.sh
+          ${{secret.SSH}} ${UBUNTU_1804} < install_xrt.sh
      - name: reset card Ubuntu18.04
        if: always()
        timeout-minutes: 5
        run: |
-          ${{secret.SSH}} ${UBUNTU_1804} ./reset_card.sh
+          ${{secret.SSH}} ${UBUNTU_1804} < reset_card.sh
      - name: examine card Ubuntu18.04
        if: always()
        timeout-minutes: 5
        run: |
-          ${{secret.SSH}} ${UBUNTU_1804} ./examine.sh
+          ${{secret.SSH}} ${UBUNTU_1804} < examine.sh
      - name: validate card Ubuntu18.04
        if: always()
        timeout-minutes: 5
        run: |
-          ${{secret.SSH}} ${UBUNTU_1804} ./validate.sh
+          ${{secret.SSH}} ${UBUNTU_1804} < validate.sh
           
 #########################  Steps for CentOS7.8  #######################################
 
      - name: build XRT centos7.8
        if: always()
        run: |
-          ${{ secrets.SSH }} ${CENTOS_78} ./build_xrt.sh "--pr_id" "${{github.event.pull_request.number}}"
+          ${{ secrets.SSH }} ${CENTOS_78} < build_xrt.sh "--pr_id" "${{github.event.pull_request.number}}"
      - name: install XRT centos7.8
        if: always()
        run: |
-          ${{ secrets.SSH }} ${CENTOS_78} ./install_xrt.sh
+          ${{ secrets.SSH }} ${CENTOS_78} < install_xrt.sh
      - name: reset card centos7.8
        if: always()
        timeout-minutes: 5
        run: |
-          ${{ secrets.SSH }} ${CENTOS_78} ./reset_card.sh
+          ${{ secrets.SSH }} ${CENTOS_78} < reset_card.sh
      - name: examine card centos7.8
        if: always()
        timeout-minutes: 5
        run: |
-          ${{ secrets.SSH }} ${CENTOS_78} ./examine.sh
+          ${{ secrets.SSH }} ${CENTOS_78} < examine.sh
      - name: validate card centos7.8
        if: always()
        timeout-minutes: 5
        run: |
-          ${{ secrets.SSH }} ${CENTOS_78} ./validate.sh
+          ${{ secrets.SSH }} ${CENTOS_78} < validate.sh
           
 #################################################################################################
 #      Dettach the cards attached to the VM. If not removed, next PR is going to be affected.   #
