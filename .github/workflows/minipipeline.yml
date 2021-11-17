@@ -54,15 +54,7 @@ jobs:
       timeout-minutes: 10
       run: |
           sudo ./stress_drivers.sh
-     
-  dettach:
-    if: ${{ always() }}
-    needs: verification
-    runs-on: enclave_host
-    defaults:
-      run:
-        working-directory: /home/sdausr/mini_pipeline
-    steps:
-    - name: dettach_card
+    - name: Success
+      if: always()
       run: |
-          sudo ./dettach_card.sh
+          sudo ./ssignal.sh
