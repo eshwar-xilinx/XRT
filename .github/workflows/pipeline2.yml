@@ -33,7 +33,7 @@ jobs:
       uses: actions/checkout@v2
     - name: build XRT
       run: |
-          ./setup.sh
+          sudo ./setup.sh
           ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
           
     - name: install XRT
