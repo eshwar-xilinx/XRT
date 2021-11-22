@@ -4,7 +4,7 @@ on:
   pull_request:
 
 jobs:
-  vm_creation:
+  preparing_vm:
     runs-on: enclave_host
     defaults:
       run:
@@ -16,8 +16,9 @@ jobs:
     - name: Attaching Cards to VM
       run: | 
           sudo ./attach_cards.sh
+          
   verification:
-    needs: vm_creation
+    needs: preparing_vm
     runs-on: ${{matrix.os}}
     defaults:
       run:
@@ -28,32 +29,46 @@ jobs:
         os: [ u200_18.04, u50_7.8, u250_20.04 ]
       fail-fast: false
     steps:
+    - name: checkout repo
+      uses: actions/checkout@v2
     - name: build XRT
       run: |
           sudo ./setup.sh
           sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+          
     - name: install XRT
       run: |
           sudo ./install_xrt.sh
+          
     - name: reset card
       timeout-minutes: 5
       run: |
           sudo ./reset_card.sh
+          
     - name: examine card
       if: always()
       timeout-minutes: 5
       run: |
           sudo ./examine.sh
+          
     - name: validate card
       if: always()
       timeout-minutes: 5
       run: |
           sudo ./validate.sh
+          
     - name: drivers reloading
       if: always()
       timeout-minutes: 10
       run: |
           sudo ./stress_drivers.sh
+          
+    - name: Upload the build artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: XRT build
+        path: /home/eshwar/XRT/build
+        
     - name: Success
       if: always()
       run: |
