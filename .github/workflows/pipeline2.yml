@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{matrix.os}}
     defaults:
       run:
-        working-directory: /home/eshwar
+        shell: bash
     timeout-minutes: 50
     strategy:
       matrix:
