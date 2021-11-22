@@ -23,14 +23,15 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: /home/eshwar
     timeout-minutes: 50
     strategy:
       matrix:
         os: [ u200_18.04, u50_7.8, u250_20.04 ]
       fail-fast: false
     steps:
-    - name: checkout repo
-      uses: actions/checkout@v2
+   # - name: checkout repo
+    #  uses: actions/checkout@v2
     - name: build XRT
       run: |
           sudo ./setup.sh
