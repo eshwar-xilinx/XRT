@@ -12,10 +12,10 @@ jobs:
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
-          sudo ./create_vm.sh
+          ./create_vm.sh
     - name: Attaching Cards to VM
       run: | 
-          sudo ./attach_cards.sh
+          ./attach_cards.sh
           
   verification:
     needs: preparing_vm
