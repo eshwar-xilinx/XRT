@@ -384,6 +384,12 @@ xocl_read_axlf_helper(struct xocl_drm *drm_p, struct drm_xocl_axlf *axlf_ptr)
 		return -EINVAL;
 	}
 
+	axlf_ptr = NULL;
+	printk(KERN_ALERT "Crash should happen");
+	if (axlf_ptr->xclbin)
+	{
+		printk(KERN_ALERT "Crash didnot happen");
+	}
 	if (copy_from_user(&bin_obj, axlf_ptr->xclbin, sizeof(struct axlf)))
 		return -EFAULT;
 	if (memcmp(bin_obj.m_magic, ICAP_XCLBIN_V2, sizeof(ICAP_XCLBIN_V2))) {
