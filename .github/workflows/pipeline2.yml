@@ -21,6 +21,7 @@ jobs:
     runs-on: enclave_host
     steps:
     - name: Dummy
+      timeout-minutes: 5
       run: |
           ./dummy_test.sh
           
