@@ -17,6 +17,13 @@ jobs:
       run: | 
           ./attach_cards.sh
           
+  collecting_log:
+    runs-on: enclave_host
+    steps:
+    - name: Dummy
+      run: |
+          ./dummy_test.sh
+          
   verification:
     needs: preparing_vm
     runs-on: ${{matrix.os}}
