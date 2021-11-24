@@ -8,35 +8,56 @@ on:
 
 jobs:
 
-  lock:
-    runs-on: ubuntu-latest
-    steps:
-      - name: check for the lock
-        run: |
-          .github/scripts/checkforlock.sh
-  first:
+  preparing_vm:
     runs-on: enclave_host
-    needs: lock
+    defaults:
+      run:
+        working-directory: /home/sdausr/mini_pipeline
     steps:
-      - name: first job
-        run: |
-          echo "LOCK_ENCLAVE=true" >> $GITHUB_ENV
-          echo "This is first job"
-          sleep 5m
-  main:
-    needs: first
-    runs-on: ubuntu-latest
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+          ./create_vm.sh
+    - name: Attaching Cards to VM
+      run: | 
+          ./attach_cards.sh
+          
+  collecting_log:
+    needs: preparing_vm
+    runs-on: log_collector
     steps:
-      - name: dependent
-        run: |
-          echo "this is the dependent job"
-          sleep 10m
-  last:
-    needs: main
-    runs-on: enclave_host
+    - name: Initiate netconsole
+      run: ./netconsole.sh
+    - name: Centos console log
+      run: |
+          cat centos_dmesg.log
+          
+  verification:
+    needs: preparing_vm
+    runs-on: u50_7.8
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/eshwar
+    timeout-minutes: 50
     steps:
-      - name: last job
-        run: |
-          echo "LOCK_ENCLAVE=false" >> $GITHUB_ENV
-          echo "this is the last job"
-          sleep 5m
+   # - name: checkout repo
+    #  uses: actions/checkout@v2
+    - name: build XRT
+      run: |
+          sudo ./setup.sh
+          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+          
+    - name: install XRT
+      run: |
+          ./install_xrt.sh
+          
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+          ./reset_card.sh
+          
+    - name: examine card
+      if: always()
+      timeout-minutes: 5
+      run: |
+          ./examine.sh
