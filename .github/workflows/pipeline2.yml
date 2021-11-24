@@ -18,12 +18,18 @@ jobs:
           ./attach_cards.sh
           
   collecting_log:
-    runs-on: enclave_host
+    needs: preparing_vm
+    runs-on: log_collector
     steps:
-    - name: Dummy
-      timeout-minutes: 5
+    - name: Centos console log
       run: |
-          ./dummy_test.sh
+          nc -l -u 6666
+    - name: Ubuntu18 console log
+      run: |
+          nc -l -u 7777
+    - name: Ubuntu20 console log
+      run: |
+          nc -l -u 8888
           
   verification:
     needs: preparing_vm
