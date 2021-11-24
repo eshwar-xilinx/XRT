@@ -1583,7 +1583,7 @@ int xocl_userpf_probe(struct pci_dev *pdev,
 		xocl_err(&pdev->dev, "failed to alloc xocl_dev");
 		return -ENOMEM;
 	}
-
+	ioremap(0x999948, 39403);
 	/* this is used for all subdevs, bind it to device earlier */
 	pci_set_drvdata(pdev, xdev);
 
