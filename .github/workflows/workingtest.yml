@@ -32,8 +32,8 @@ jobs:
     steps:
     - name: Initiate netconsole
       run: |
-          rm centos_dmesg.txt
           nc -l -u 6666 > centos_dmesg.txt &
+          sleep 30m
           cat centos_dmesg.txt
           
   verification:
@@ -69,3 +69,13 @@ jobs:
       timeout-minutes: 5
       run: |
           ./examine.sh
+          
+    - name: validate card
+      if: always()
+      timeout-minutes: 5
+      run: ./validate.sh
+    
+    - name: stress
+      if: always()
+      timeout-minutes: 5
+      run: sudo ./stress_drivers.sh
