@@ -46,7 +46,7 @@ jobs:
    # - name: checkout repo
     #  uses: actions/checkout@v2
     - name: nothing 
-      run: sudo modprobe options netconsole netconsole=6666@10.23.83.52/enp1s0,6666@10.23.83.236/52:54:00:63:62:49
+      run: sudo modprobe options netconsole netconsole=6666@10.23.83.180/eth0,6666@10.23.83.41/52:54:00:63:62:49
       
     - name: build XRT
       run: |
