@@ -28,11 +28,13 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: /home/eshwar
     steps:
     - name: Initiate netconsole
       run: |
-          nc -l -u 6666 > centos_dmesg.log 
-          cat centos_dmesg.log
+          rm centos_dmesg.txt
+          nc -l -u 6666 > centos_dmesg.txt &
+          cat centos_dmesg.txt
           
   verification:
     needs: preparing_vm
