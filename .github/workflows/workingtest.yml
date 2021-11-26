@@ -24,11 +24,15 @@ jobs:
   collecting_log:
     needs: preparing_vm
     runs-on: log_collector
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
     steps:
     - name: Initiate netconsole
-      run: ./netconsole.sh
-    - name: Centos console log
       run: |
+          nc -l -u 6666 > centos_dmesg.log &
+          sleep 20m
           cat centos_dmesg.log
           
   verification:
@@ -64,3 +68,9 @@ jobs:
       timeout-minutes: 5
       run: |
           ./examine.sh
+    
+    - name: validate card
+      if: always()
+      timeout-minutes: 5
+      run: |
+          ./validate.sh
