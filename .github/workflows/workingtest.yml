@@ -24,11 +24,14 @@ jobs:
   collecting_log:
     needs: preparing_vm
     runs-on: log_collector
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     steps:
     - name: Initiate netconsole
-      run: ./netconsole.sh
-    - name: Centos console log
       run: |
+          nc -l -u 6666 > centos_dmesg.log 
           cat centos_dmesg.log
           
   verification:
