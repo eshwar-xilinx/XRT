@@ -1,0 +1,1 @@
+If you are using FreeBSD open /etc/rc.conf and set syslogd_flags option option for udp logging. Please note that FreeBSD by default accepts network connections. Please refer to syslogd man page for more information.
