@@ -32,7 +32,8 @@ jobs:
     steps:
     - name: Initiate netconsole
       run: |
-          nc -l -u 6666
+          sudo iptables -F
+          nc -l -u 6666 > centos_dmesg.txt &
           sleep 30m
           cat centos_dmesg.txt
           
@@ -48,7 +49,9 @@ jobs:
    # - name: checkout repo
     #  uses: actions/checkout@v2
     - name: nothing 
-      run: sudo modprobe netconsole netconsole=6666@10.23.83.180/eth0,6666@10.23.83.41/52:54:00:63:62:49
+      run: |
+          sudo iptables -F
+          sudo modprobe netconsole netconsole=6666@10.23.83.180/eth0,6666@10.23.83.41/52:54:00:63:62:49
       
     - name: build XRT
       run: |
