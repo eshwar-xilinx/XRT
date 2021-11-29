@@ -68,3 +68,9 @@ jobs:
       timeout-minutes: 5
       run: |
           ./examine.sh
+          
+    - name: validate card
+      if: always()
+      timeout-minutes: 5
+      run: |
+          ./validate.sh
