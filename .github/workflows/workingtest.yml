@@ -32,9 +32,8 @@ jobs:
     steps:
     - name: Initiate netconsole
       run: |
-          rm centos_dmesg.txt
-          nc -l -u 6666 > centos_dmesg.txt &
-          cat centos_dmesg.txt
+          rm centos_dmesg.txt > /dev/null 2>&1
+          nc -l -u 6666 
           
   verification:
     needs: preparing_vm
