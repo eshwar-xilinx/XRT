@@ -17,20 +17,6 @@ jobs:
       run: | 
           ./attach_cards.sh
           
-  collecting_log:
-    needs: preparing_vm
-    runs-on: log_collector
-    steps:
-    - name: Centos console log
-      run: |
-          nc -l -u 6666
-    - name: Ubuntu18 console log
-      run: |
-          nc -l -u 7777
-    - name: Ubuntu20 console log
-      run: |
-          nc -l -u 8888
-          
   verification:
     needs: preparing_vm
     runs-on: ${{matrix.os}}
@@ -41,7 +27,8 @@ jobs:
     timeout-minutes: 50
     strategy:
       matrix:
-        os: [ u200_18.04, u50_7.8, u250_20.04 ]
+        #os: [ u200_18.04, u50_7.8, u250_20.04 ]
+        os: [ u200_18.04, u50_7.8 ]
       fail-fast: false
     steps:
    # - name: checkout repo
@@ -72,11 +59,11 @@ jobs:
       run: |
           ./validate.sh
           
-    - name: drivers reloading
+    - name: dmesg
       if: always()
       timeout-minutes: 10
       run: |
-          ./stress_drivers.sh
+          ./print_dmesg.sh
           
     - name: Upload the build artifacts
       uses: actions/upload-artifact@v2
@@ -88,3 +75,15 @@ jobs:
       if: always()
       run: |
           ./ssignal.sh
+  
+  collect_log:
+    runs-on: log_collector
+    needs: verification
+    if: always()
+    steps:
+    - name: Centos78
+      run: |
+          ./dmesg_centos7.sh
+    - name: Ubuntu1804
+      run: |
+          ./dmesg_ubuntu18.sh
