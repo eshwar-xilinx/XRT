@@ -63,13 +63,7 @@ jobs:
       if: always()
       timeout-minutes: 10
       run: |
-          ./print_dmesg.sh
-          
-    - name: Upload the build artifacts
-      uses: actions/upload-artifact@v2
-      with:
-        name: XRT build
-        path: /home/eshwar/XRT/build
+          dmesg
         
     - name: Success
       if: always()
@@ -82,8 +76,14 @@ jobs:
     if: always()
     steps:
     - name: Centos78
-      run: |
-          ./dmesg_centos7.sh
-    - name: Ubuntu1804
-      run: |
-          ./dmesg_ubuntu18.sh
+      uses: actions/upload-artifact@v2
+      with:
+        name: Centos78
+        path: /home/eshwar/centos78
+      
+    - name: Ubuntu18
+      uses: actions/upload-artifact@v2
+      with:
+        name: Ubuntu18
+        path: /home/eshwar/ubuntu18
+      
