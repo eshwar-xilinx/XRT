@@ -62,6 +62,9 @@ jobs:
       timeout-minutes: 5
       run: |
           ./validate.sh
+    - name: dmesg
+      if: always()
+      run: dmesg
     - name: drivers reloading
       if: always()
       timeout-minutes: 10
