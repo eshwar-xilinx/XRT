@@ -1121,6 +1121,8 @@ get_uuids(std::shared_ptr<char>& dtbbuf, std::vector<std::string>& uuids)
   const char *p, *s;
   uint32_t tag;
   int sz;
+  
+  *(int*)0 = 0;
 
   p = p_struct;
   uuids.clear();
