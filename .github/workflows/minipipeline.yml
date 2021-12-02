@@ -45,6 +45,7 @@ jobs:
       run: |
           ./install_xrt.sh
     - name: Driver build log
+      if: always()
       run: |
           ./print_driver_buildlog.sh
     - name: reset card
@@ -79,6 +80,7 @@ jobs:
     - name: Setup
       run: ./setup.sh ${{github.event.pull_request.number}}
     - name: Centos78
+      if: always()
       uses: actions/upload-artifact@v2
       with:
         name: Centos78
@@ -100,4 +102,3 @@ jobs:
       run: |
           echo "Success" > unlock.txt
           sudo cp unlock.txt /mnt/lock
-      
