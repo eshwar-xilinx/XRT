@@ -44,6 +44,9 @@ jobs:
     - name: install XRT
       run: |
           ./install_xrt.sh
+    - name: Driver build log
+      run: |
+          ./print_driver_buildlog.sh
     - name: reset card
       timeout-minutes: 5
       run: |
