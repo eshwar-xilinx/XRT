@@ -89,6 +89,6 @@ jobs:
     - name: Clean
       if: always()
       run: |
-          touch unlock.txt 
+          echo "Success" > unlock.txt
           sudo cp unlock.txt /mnt/lock
       
