@@ -40,7 +40,7 @@ static ssize_t debug_show(struct device *dev,
 static ssize_t debug_store(struct device *dev,
 	struct device_attribute *da, const char *buf, size_t count)
 {
-	struct platform_device *pdev = to_platform_device(dev);
+	struct platform_device *pdev = to_platform_device(dev)
 	struct xocl_cu *cu = platform_get_drvdata(pdev);
 	struct xrt_cu *xcu = &cu->base;
 	u32 debug;
