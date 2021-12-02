@@ -92,7 +92,7 @@ static void set_mig_cache_data(struct xocl_dev *xdev, struct xcl_mig_ecc *mig_ec
 		if (!id)
 			continue;
 
-		mem_type = (id >> 16) & 0xFF;
+		mem_type = (id >> 16) & 0xFF
 		memidx = id & 0xFF;
 
 		for (idx = 0; idx < MAX_M_COUNT; ++idx) {
