@@ -32,30 +32,44 @@ jobs:
     - name: build XRT
       run: |
           sudo ./setup.sh
-          sudo ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
     - name: install XRT
       run: |
-          sudo ./install_xrt.sh
+          ./install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          sudo ./reset_card.sh
+          ./reset_card.sh
     - name: examine card
       if: always()
       timeout-minutes: 5
       run: |
-          sudo ./examine.sh
+          ./examine.sh
     - name: validate card
       if: always()
       timeout-minutes: 5
       run: |
-          sudo ./validate.sh
+          ./validate.sh
     - name: drivers reloading
       if: always()
       timeout-minutes: 10
       run: |
-          sudo ./stress_drivers.sh
-    - name: Success
-      if: always()
-      run: |
-          sudo ./ssignal.sh
+          ./stress_drivers.sh
+          
+  collect_log:
+    runs-on: log_collector
+    needs: verification
+    if: always()
+    steps:
+    - name: Setup
+      run: ./setup.sh
+    - name: Centos78
+      uses: actions/upload-artifact@v2
+      with:
+        name: Centos78
+        path: /home/eshwar/centos78
+    - name: Ubuntu18
+      uses: actions/upload-artifact@v2
+      with:
+        name: Ubuntu18
+        path: /home/eshwar/ubuntu18
