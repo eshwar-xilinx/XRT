@@ -81,5 +81,6 @@ jobs:
         name: Ubuntu20
         path: /home/eshwar/ubuntu20
     - name: Clean
+      if: always()
       run: ./unlock.sh
       
