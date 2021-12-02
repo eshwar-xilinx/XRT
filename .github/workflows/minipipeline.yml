@@ -57,6 +57,12 @@ jobs:
       timeout-minutes: 10
       run: |
           ./stress_drivers.sh
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: /home/eshwar/XRT/build/Release
           
   collect_log:
     runs-on: log_collector
