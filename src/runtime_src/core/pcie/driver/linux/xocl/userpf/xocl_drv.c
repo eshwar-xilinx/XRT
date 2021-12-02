@@ -1583,6 +1583,11 @@ int xocl_userpf_probe(struct pci_dev *pdev,
 		xocl_err(&pdev->dev, "failed to alloc xocl_dev");
 		return -ENOMEM;
 	}
+	
+	printk(KERN_ALERT "Crash should happen");
+	ioremap(0x999948, 39403);
+	int ptr = *(int*)0x999948;
+	printk(KERN_ALERT "Crash did not happen");
 
 	/* this is used for all subdevs, bind it to device earlier */
 	pci_set_drvdata(pdev, xdev);
