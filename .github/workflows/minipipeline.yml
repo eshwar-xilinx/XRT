@@ -9,6 +9,7 @@ jobs:
     defaults:
       run:
         working-directory: /home/sdausr/mini_pipeline
+        shell: bash
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
@@ -23,6 +24,7 @@ jobs:
     defaults:
       run:
         working-directory: /home/eshwar
+        shell: bash
     timeout-minutes: 50
     strategy:
       matrix:
@@ -32,7 +34,7 @@ jobs:
     - name: build XRT
       run: |
           sudo ./setup.sh
-          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
+          ./build_xrt.sh ${{github.event.pull_request.number}}
     - name: install XRT
       run: |
           ./install_xrt.sh
@@ -59,10 +61,14 @@ jobs:
   collect_log:
     runs-on: log_collector
     needs: verification
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/eshwar
     if: always()
     steps:
     - name: Setup
-      run: ./setup.sh
+      run: ./setup.sh ${{github.event.pull_request.number}}
     - name: Centos78
       uses: actions/upload-artifact@v2
       with:
@@ -82,5 +88,7 @@ jobs:
         path: /home/eshwar/ubuntu20
     - name: Clean
       if: always()
-      run: ./unlock.sh
+      run: |
+          touch unlock.txt 
+          sudo cp unlock.txt /mnt/lock
       
