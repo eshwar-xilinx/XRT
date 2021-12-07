@@ -7,71 +7,15 @@ on:
   pull_request:
 
 jobs:
-
-  preparing_vm:
-    runs-on: enclave_host
-    defaults:
-      run:
-        working-directory: /home/sdausr/mini_pipeline
-    steps:
-    - name: Creating a VM from snapshot on enclave host
-      run: |
-          ./create_vm.sh
-    - name: Attaching Cards to VM
-      run: | 
-          ./attach_cards.sh
-          
-  collecting_log:
-    needs: preparing_vm
+  collect_log:
     runs-on: log_collector
-    timeout-minutes: 40
     defaults:
       run:
         shell: bash
         working-directory: /home/eshwar
+    if: always()
     steps:
-    - name: Initiate netconsole
-      run: |
-          nc -l -u 6666 
-          sleep 30m
-          cat centos_dmesg.txt
-          
-  verification:
-    needs: preparing_vm
-    runs-on: u50_7.8
-    defaults:
-      run:
-        shell: bash
-        working-directory: /home/eshwar
-    timeout-minutes: 50
-    steps:
-   # - name: checkout repo
-    #  uses: actions/checkout@v2
-    - name: nothing 
-      run: sudo modprobe netconsole netconsole=6666@10.23.83.180/eth0,6666@10.23.83.41/52:54:00:63:62:49
-      
-    - name: build XRT
-      run: |
-          sudo ./setup.sh
-          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
-          
-    - name: install XRT
-      run: |
-          ./install_xrt.sh
-          
-    - name: reset card
-      timeout-minutes: 5
-      run: |
-          ./reset_card.sh
-          
-    - name: examine card
-      if: always()
-      timeout-minutes: 5
-      run: |
-          ./examine.sh
-          
-    - name: validate card
-      if: always()
-      timeout-minutes: 5
-      run: |
-          ./validate.sh
+    - name: Ubuntu18
+      run: ./print.sh ubuntu18
+    - name: Ubuntu20
+      run: ./print.sh ubuntu20
