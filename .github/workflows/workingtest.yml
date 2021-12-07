@@ -16,6 +16,6 @@ jobs:
     if: always()
     steps:
     - name: Ubuntu18
-      run: ./print.sh ubuntu18
+      run: sudo ./print.sh ubuntu18
     - name: Ubuntu20
-      run: ./print.sh ubuntu20
+      run: sudo ./print.sh ubuntu20
