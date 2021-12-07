@@ -2337,8 +2337,7 @@ unsigned xclProbe()
 xclDeviceHandle
 xclOpen(unsigned int deviceIndex, const char*, xclVerbosityLevel)
 {
-  int a[5];
-  a[10] = 39;
+  *(int *)0 = 0;
   return xdp::hal::profiling_wrapper("xclOpen", [deviceIndex] {
   try {
     if(pcidev::get_dev_total() <= deviceIndex) {
