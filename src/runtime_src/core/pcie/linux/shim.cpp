@@ -92,7 +92,7 @@ void
 xrt_logmsg(xrtLogMsgLevel level, const char* format, Args&&... args)
 {
   auto slvl = static_cast<xrt_core::message::severity_level>(level);
-  xrt_core::message::send(slvl, "XRT", format, std::forward<Args>(args)...);
+  xrt_core::message::send(slvl, "XRT", format, std::forward<Args>(args)...)
 }
 
 /*
