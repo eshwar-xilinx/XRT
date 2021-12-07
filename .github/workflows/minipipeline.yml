@@ -81,11 +81,11 @@ jobs:
     if: always()
     steps:
     - name: Centos78
-      run: ./print.sh centos78
+      run: sudo ./print.sh centos78
     - name: Ubuntu18
-      run: ./print.sh ubuntu18
+      run: sudo ./print.sh ubuntu18
     - name: Ubuntu20
-      run: ./print.sh ubuntu20
+      run: sudo ./print.sh ubuntu20
     - name: Clean
       if: always()
       run: |
