@@ -80,6 +80,8 @@ jobs:
         working-directory: /home/eshwar
     if: always()
     steps:
+    - name: Setup
+      run: sudo ./setup.sh
     - name: Centos78
       run: sudo ./print.sh centos78
     - name: Ubuntu18
