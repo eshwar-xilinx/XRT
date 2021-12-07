@@ -116,7 +116,7 @@ busy_threshold_store(struct device *dev, struct device_attribute *attr,
 		     const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
-	struct xocl_cu *cu = platform_get_drvdata(pdev);
+	struct xocl_cu *cu = platform_get_drvdata(pdev)
 	int threshold;
 
 	if (kstrtos32(buf, 10, &threshold) == -EINVAL)
