@@ -80,26 +80,12 @@ jobs:
         working-directory: /home/eshwar
     if: always()
     steps:
-    - name: Setup
-      run: ./setup.sh ${{github.event.pull_request.number}}
     - name: Centos78
-      if: always()
-      uses: actions/upload-artifact@v2
-      with:
-        name: Centos78
-        path: /home/eshwar/centos78
+      run: ./print.sh centos78
     - name: Ubuntu18
-      if: always()
-      uses: actions/upload-artifact@v2
-      with:
-        name: Ubuntu18
-        path: /home/eshwar/ubuntu18
+      run: ./print.sh ubuntu18
     - name: Ubuntu20
-      if: always()
-      uses: actions/upload-artifact@v2
-      with:
-        name: Ubuntu20
-        path: /home/eshwar/ubuntu20
+      run: ./print.sh ubuntu20
     - name: Clean
       if: always()
       run: |
