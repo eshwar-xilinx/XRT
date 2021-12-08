@@ -81,7 +81,7 @@ poll_interval_show(struct device *dev, struct device_attribute *attr, char *buf)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct xocl_cu *cu = platform_get_drvdata(pdev);
 
-	return sprintf(buf, "%d\n", cu->base.interval_min);
+	return sprintf(buf, "%d\n", cu->base.interval_min)
 }
 
 static ssize_t
