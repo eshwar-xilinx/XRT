@@ -1,89 +1,94 @@
-name: Pipeline Test
+name: Pipeline Test 2
 
 on:     
   pull_request:
 
 jobs:
-  preparing_vm:
+  vm_creation:
     runs-on: enclave_host
     defaults:
       run:
         working-directory: /home/sdausr/mini_pipeline
+        shell: bash
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
-          ./create_vm.sh
+          sudo ./create_vm.sh
     - name: Attaching Cards to VM
       run: | 
-          ./attach_cards.sh
-          
-  verification:
-    needs: preparing_vm
+          sudo ./attach_cards.sh
+
+  XRT:
+    needs: vm_creation
     runs-on: ${{matrix.os}}
     defaults:
       run:
         shell: bash
-        working-directory: /home/eshwar
     timeout-minutes: 50
     strategy:
       matrix:
-        #os: [ u200_18.04, u50_7.8, u250_20.04 ]
-        os: [ u200_18.04, u50_7.8 ]
+        os: [ u200_18.04, u50_7.8, u250_20.04 ]
       fail-fast: false
     steps:
-   # - name: checkout repo
-    #  uses: actions/checkout@v2
+    - name: Setup
+      run: sudo ./setup.sh
+      working-directory: /home/eshwar
+    - name: Checkout PR
+      uses: actions/checkout@v2
     - name: build XRT
       run: |
-          sudo ./setup.sh
-          ./build_xrt.sh --pr_id ${{github.event.pull_request.number}}
-          
+          .github/scripts/build_xrt.sh
     - name: install XRT
       run: |
-          ./install_xrt.sh
-          
+          .github/scripts/install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          ./reset_card.sh
-          
+          .github/scripts/reset_card.sh
     - name: examine card
-      if: always()
       timeout-minutes: 5
       run: |
-          ./examine.sh
-          
+          .github/scripts/examine.sh
     - name: validate card
-      if: always()
       timeout-minutes: 5
       run: |
-          ./validate.sh
-          
-    - name: dmesg
-      if: always()
+          .github/scripts/validate.sh
+    - name: drivers reloading
       timeout-minutes: 10
       run: |
-          dmesg
-        
-    - name: Success
+          .github/scripts/stress_drivers.sh
+    - name: dmesg
       if: always()
-      run: |
-          ./ssignal.sh
-  
-  collect_log:
+      run: dmesg
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: build/Release
+          
+  kernel_crash_log:
     runs-on: log_collector
-    needs: verification
+    needs: XRT
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/eshwar
     if: always()
     steps:
+    - name: Setup
+      run: sudo ./setup.sh
     - name: Centos78
-      uses: actions/upload-artifact@v2
-      with:
-        name: Centos78
-        path: /home/eshwar/centos78
-      
+      if: always()
+      run: sudo ./print.sh centos78
     - name: Ubuntu18
-      uses: actions/upload-artifact@v2
-      with:
-        name: Ubuntu18
-        path: /home/eshwar/ubuntu18
-      
+      if: always()
+      run: sudo ./print.sh ubuntu18
+    - name: Ubuntu20
+      if: always()
+      run: sudo ./print.sh ubuntu20
+    - name: Clean
+      if: always()
+      run: |
+          echo "Success" > unlock.txt
+          sudo cp unlock.txt /mnt/lock
