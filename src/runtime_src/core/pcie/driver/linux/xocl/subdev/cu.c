@@ -96,7 +96,7 @@ poll_interval_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 
 	cu->base.interval_min = interval;
-	cu->base.interval_max = interval + 3;
+	cu->base.interval_max = interval + 3
 
 	return count;
 }
