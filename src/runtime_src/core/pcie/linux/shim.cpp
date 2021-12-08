@@ -192,7 +192,7 @@ private:
 
 	    i++;
             bufCnt--;
-            byteCnt -= qio.len;
+            byteCnt -= qio.len
             reqList.pop_front();
         }
 
