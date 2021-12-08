@@ -35,7 +35,7 @@ jobs:
     - name: build XRT
       run: |
           sudo ./setup.sh
-          ./build_xrt.sh ${{github.event.pull_request.number}}
+          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
@@ -44,23 +44,23 @@ jobs:
         path: /home/eshwar/XRT/build/Release
     - name: install XRT
       run: |
-          ./install_xrt.sh
+          ./tests/install_xrt/install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          ./reset_card.sh
+          ./tests/reset/reset_card.sh
     - name: examine card
       timeout-minutes: 5
       run: |
-          ./examine.sh
+          ./tests/examine/examine.sh
     - name: validate card
       timeout-minutes: 5
       run: |
-          ./validate.sh
+          ./tests/validate/validate.sh
     - name: drivers reloading
       timeout-minutes: 10
       run: |
-          ./stress_drivers.sh
+          .tests/stress/stress_drivers.sh
     - name: dmesg
       if: always()
       run: dmesg
