@@ -1,21 +1,92 @@
-# This is a basic workflow to help you get started with Actions
+name: WorkingTest
 
-name: working through test
-
-# Controls when the workflow will run
-on:
+on:     
   pull_request:
 
 jobs:
-  collect_log:
+  vm_creation:
+    runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+          sudo ./create_vm.sh
+      working-directory: /home/sdausr/minipipeline/utils/kvm
+    - name: Attaching Cards to VM
+      run: | 
+          sudo ./attach_cards.sh
+      working-directory: /home/sdausr/minipipeline/utils/kvm
+
+  XRT:
+    needs: vm_creation
+    runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
+    timeout-minutes: 50
+    strategy:
+      matrix:
+        os: [ u200_18.04, u50_7.8, u250_20.04 ]
+      fail-fast: false
+    steps:
+    - name: build XRT
+      run: |
+          sudo ./setup.sh
+          ./build_xrt.sh ${{github.event.pull_request.number}}
+    - name: install XRT
+      run: |
+          ./install_xrt.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+          ./reset_card.sh
+    - name: examine card
+      timeout-minutes: 5
+      run: |
+          ./examine.sh
+    - name: validate card
+      timeout-minutes: 5
+      run: |
+          ./validate.sh
+    - name: drivers reloading
+      timeout-minutes: 10
+      run: |
+          ./stress_drivers.sh
+    - name: dmesg
+      if: always()
+      run: dmesg
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: /home/eshwar/XRT/build/Release
+          
+  kernel_crash_log:
     runs-on: log_collector
+    needs: XRT
     defaults:
       run:
         shell: bash
         working-directory: /home/eshwar
     if: always()
     steps:
+    - name: Setup
+      run: sudo ./setup.sh
+    - name: Centos78
+      if: always()
+      run: sudo ./print.sh centos78
     - name: Ubuntu18
-      run: ./print.sh ubuntu18
+      if: always()
+      run: sudo ./print.sh ubuntu18
     - name: Ubuntu20
-      run: ./print.sh ubuntu20
+      if: always()
+      run: sudo ./print.sh ubuntu20
+    - name: Clean
+      if: always()
+      run: |
+          echo "Success" > unlock.txt
+          sudo cp unlock.txt /mnt/lock
