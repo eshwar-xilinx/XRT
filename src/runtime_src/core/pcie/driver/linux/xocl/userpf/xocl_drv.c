@@ -1052,6 +1052,10 @@ static int identify_bar_by_dts(struct xocl_dev *xdev)
 	if (!xdev->core.bar_addr)
 		return -EIO;
 
+	printk(KERN_ALERT "cRASH start");
+	ioread32(xdev->core.bar_addr + 0x15000000);
+	printk(KERN_ALERT "Crash not happen");
+
 	xdev->core.bar_idx = bar_id;
 	xdev->core.bar_size = bar_len;
 
