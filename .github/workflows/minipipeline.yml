@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 50
     strategy:
       matrix:
-        os: [ u50_7.8, u250_20.04 ]
+        os: [ u200_18.04, u50_7.8, u250_20.04 ]
       fail-fast: false
     steps:
     - name: build XRT
