@@ -9,15 +9,14 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: /home/sdausr/mini_pipeline
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
-          sudo ./create_vm.sh
-      working-directory: /home/sdausr/minipipeline/utils/kvm
+          sudo ./utils/kvm/create_vm.sh
     - name: Attaching Cards to VM
       run: | 
-          sudo ./attach_cards.sh
-      working-directory: /home/sdausr/minipipeline/utils/kvm
+          sudo ./utils/kvm/attach_cards.sh
 
   XRT:
     needs: vm_creation
@@ -35,8 +34,7 @@ jobs:
     - name: build XRT
       run: |
           sudo ./setup.sh
-          ./build_xrt.sh ${{github.event.pull_request.number}}
-      working-directory: /home/eshwar/tests/build_xrt
+          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
@@ -45,28 +43,23 @@ jobs:
         path: /home/eshwar/XRT/build/Release
     - name: install XRT
       run: |
-          ./install_xrt.sh
-      working-directory: /home/eshwar/tests/install_xrt
+          ./tests/install_xrt/install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          ./reset_card.sh
-      working-directory: /home/eshwar/tests/reset
+          ./tests/reset/reset_card.sh
     - name: examine card
       timeout-minutes: 5
       run: |
-          ./examine.sh
-      working-directory: /home/eshwar/tests/examine
+          ./tests/examine/examine.sh
     - name: validate card
       timeout-minutes: 5
       run: |
-          ./validate.sh
-      working-directory: /home/eshwar/tests/validate
+          ./tests/validate/validate.sh
     - name: drivers reloading
       timeout-minutes: 10
       run: |
-          ./stress_drivers.sh
-      working-directory: /home/eshwar/tests/stress
+          ./tests/stress/stress_drivers.sh
     - name: dmesg
       if: always()
       run: dmesg
