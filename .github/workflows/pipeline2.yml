@@ -38,6 +38,12 @@ jobs:
     - name: build XRT
       run: |
           .github/scripts/build_xrt.sh
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: build/Release
     - name: install XRT
       run: |
           .github/scripts/install_xrt.sh
@@ -60,12 +66,6 @@ jobs:
     - name: dmesg
       if: always()
       run: dmesg
-    - name: XRT build artifacts
-      if: always()
-      uses: actions/upload-artifact@v2
-      with:
-        name: Build Artifacts
-        path: build/Release
           
   kernel_crash_log:
     runs-on: log_collector
