@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: enclave_host
+    outputs:
+      output1: ${{steps.ip.output.ipaddr}}
+    steps:
+      - id : ip
+        run: ::set-output name=ipaddr::ip -4 addr show br0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+
+  build2:
+    runs-on: log_collector
+    needs: build
+    steps:
+      - name: Get tag
+        run: echo ${{needs.build.outputs.output1}}
