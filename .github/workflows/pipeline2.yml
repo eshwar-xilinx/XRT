@@ -37,6 +37,7 @@ jobs:
       uses: actions/checkout@v2
     - name: build XRT
       run: |
+          cd XRT/XRT
           sudo .github/scripts/build_xrt.sh
     - name: XRT build artifacts
       if: always()
