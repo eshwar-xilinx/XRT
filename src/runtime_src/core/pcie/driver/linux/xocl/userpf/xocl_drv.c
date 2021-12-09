@@ -1583,12 +1583,8 @@ int xocl_userpf_probe(struct pci_dev *pdev,
 		xocl_err(&pdev->dev, "failed to alloc xocl_dev");
 		return -ENOMEM;
 	}
-	panic("eshwar: panic should happen");
+
 	/* this is used for all subdevs, bind it to device earlier */
-	printk(KERN_ALERT "Panic msg did not work");
-	int* p = 0;
-	printk(KERN_ALERT "%d", *p );
-	printk(KERN_ALERT "Panic did not happen");
 	
 	pci_set_drvdata(pdev, xdev);
 
