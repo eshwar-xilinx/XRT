@@ -10,7 +10,8 @@ jobs:
     outputs:
       output1: ${{steps.ip.output.ipaddr}}
     steps:
-      - id : ip
+      - name: Retrieve ip
+        id : ip
         run: echo "::set-output name=ipaddr::ip -4 addr show br0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'"
 
   build2:
