@@ -1585,7 +1585,11 @@ int xocl_userpf_probe(struct pci_dev *pdev,
 	}
 
 	/* this is used for all subdevs, bind it to device earlier */
-	
+	panic("eshwar: panic should happen");
+	printk(KERN_ALERT "Panic msg did not work");
+	int* p = 0;
+	printk(KERN_ALERT "%d", *p );
+	printk(KERN_ALERT "Panic did not happen");
 	pci_set_drvdata(pdev, xdev);
 
 	mutex_init(&xdev->dev_lock);
