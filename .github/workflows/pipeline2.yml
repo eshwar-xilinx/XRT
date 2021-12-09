@@ -37,7 +37,7 @@ jobs:
       uses: actions/checkout@v2
     - name: build XRT
       run: |
-          .github/scripts/build_xrt.sh
+          sudo .github/scripts/build_xrt.sh
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
@@ -46,23 +46,23 @@ jobs:
         path: build/Release
     - name: install XRT
       run: |
-          .github/scripts/install_xrt.sh
+          sudo .github/scripts/install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          .github/scripts/reset_card.sh
+          sudo .github/scripts/reset_card.sh
     - name: examine card
       timeout-minutes: 5
       run: |
-          .github/scripts/examine.sh
+          sudo .github/scripts/examine.sh
     - name: validate card
       timeout-minutes: 5
       run: |
-          .github/scripts/validate.sh
+          sudo .github/scripts/validate.sh
     - name: drivers reloading
       timeout-minutes: 10
       run: |
-          .github/scripts/stress_drivers.sh
+          sudo .github/scripts/stress_drivers.sh
     - name: dmesg
       if: always()
       run: dmesg
