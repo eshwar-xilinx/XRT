@@ -8,7 +8,7 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        working-directory: /home/sdausr/minipipeline
+        working-directory: /home/sdausr/mini_pipeline
         shell: bash
     steps:
     - name: Creating a VM from snapshot on enclave host
