@@ -67,6 +67,10 @@ jobs:
   timeout_job:
     needs: vm_creation
     runs-on: log_collector
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
     steps:
      - name: Ubuntu 18 dmesg
        run: |
