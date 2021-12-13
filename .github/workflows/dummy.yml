@@ -74,6 +74,7 @@ jobs:
          timeout 40m ./dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
        working-directory: /home/eshwar
      - name: Clean up
+       if: always()
        run: |
          echo "Success" > unlock.txt
          sudo cp unlock.txt /mnt/lock
