@@ -5,9 +5,68 @@ on:
     branches: [ master ]
 
 jobs:
-  timeout_job:
+  vm_creation:
     runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/sdausr/mini_pipeline
+    steps:
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+          sudo ./utils/kvm/create_vm.sh
+    - name: Attaching Cards to VM
+      run: | 
+          sudo ./utils/kvm/attach_cards.sh
+  XRT:
+    needs: vm_creation
+    runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
+    timeout-minutes: 50
+    strategy:
+      matrix:
+        os: [ u200_18.04 ]
+      fail-fast: false
+    steps:
+    - name: build XRT
+      run: |
+          sudo ./setup.sh
+          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: /home/eshwar/XRT/build/Release
+    - name: install XRT
+      run: |
+          ./tests/install_xrt/install_xrt.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+          ./tests/reset/reset_card.sh
+    - name: examine card
+      timeout-minutes: 5
+      run: |
+          ./tests/examine/examine.sh
+    - name: validate card
+      timeout-minutes: 5
+      run: |
+          ./tests/validate/validate.sh
+    - name: drivers reloading
+      timeout-minutes: 10
+      run: |
+          ./tests/stress/stress_drivers.sh
+    - name: dmesg
+      if: always()
+      run: dmesg
+
+  timeout_job:
+    runs-on: log_collector
     steps:
      - name: Timeout
        run: |
-         timeout 1m ./mini_pipeline/dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+         timeout 1m ./dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
