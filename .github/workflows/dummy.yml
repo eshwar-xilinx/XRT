@@ -22,7 +22,7 @@ jobs:
       
   XRT:
     needs: vm_creation
-    runs-on: u200_18.04
+    runs-on: u50_7.8
     defaults:
       run:
         working-directory: /home/eshwar
@@ -67,7 +67,7 @@ jobs:
     runs-on: log_collector
     steps:
      - name: Setup
-       run: ./setup.sh
+       run: sudo ./setup.sh
        working-directory: /home/eshwar
      - name: Ubuntu 18 dmesg
        run: |
