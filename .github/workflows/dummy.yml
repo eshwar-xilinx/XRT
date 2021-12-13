@@ -10,26 +10,24 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: /home/sdausr/mini_pipeline
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
-          sudo ./utils/kvm/create_vm.sh
+          sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
     - name: Attaching Cards to VM
       run: | 
-          sudo ./utils/kvm/attach_cards.sh
+          sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
+      
   XRT:
     needs: vm_creation
-    runs-on: ${{matrix.os}}
+    runs-on: u200_18.04
     defaults:
       run:
         working-directory: /home/eshwar
         shell: bash
-    timeout-minutes: 50
-    strategy:
-      matrix:
-        os: [ u200_18.04 ]
-      fail-fast: false
+    timeout-minutes: 40
     steps:
     - name: build XRT
       run: |
@@ -68,6 +66,15 @@ jobs:
     needs: vm_creation
     runs-on: log_collector
     steps:
+     - name: Setup
+       run: ./setup.sh
+       working-directory: /home/eshwar
      - name: Ubuntu 18 dmesg
        run: |
          timeout 40m ./dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+       working-directory: /home/eshwar
+     - name: Clean up
+       run: |
+         echo "Success" > unlock.txt
+         sudo cp unlock.txt /mnt/lock
+         
