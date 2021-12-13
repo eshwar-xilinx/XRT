@@ -7,7 +7,11 @@ on:
 jobs:
   timeout_job:
     runs-on: enclave_host
+    defaults:
+      run:
+        working-directory: /home/sdausr/mini_pipeline
+        shell: bash
     steps:
      - name: Timeout
        run: |
-         timeout 1m ./mini_pipeline/dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+         timeout 1m ./dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
