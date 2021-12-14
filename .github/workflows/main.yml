@@ -9,14 +9,13 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     runs-on: enclave_host
+    defaults: 
+      run:
+        shell: 'script --return --quiet --command "bash {0}"'
     steps:
       - name: Step1
-        uses: docker://evaneos/ssh-action:0.1.0
-        with:
-          ssh_config: |
-            ForcePTTYAllocation yes
-          commands: |
-            timeout 40m sudo virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        run: |
+            timeout 4m sudo virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
           
   build2:
     runs-on: log_centos7.8
