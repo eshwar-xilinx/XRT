@@ -16,7 +16,12 @@ jobs:
       - name: Step1
         timeout-minutes: 2
         run: |
-        
+          finish()
+          {
+            echo " Timeout Happended"
+            exit 0
+          }
+          trap finish TERM
           sudo virsh console ubuntu18.04 
           
   build2:
