@@ -1,0 +1,33 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Dummy
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    runs-on: enclave_host
+    steps:
+      - name: Step1
+        run: |
+          while true
+          do
+            echo "HOST1"
+          done
+  build2:
+    runs-on: enclave_host2
+    steps:
+      - name: Run a multi-line script
+        run: |
+          while true
+          do
+            echo "HOST2"
+          done
