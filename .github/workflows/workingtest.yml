@@ -72,7 +72,7 @@ jobs:
     steps:
     - name: Console Output
       run: |
-        sudo ./console.sh centos7.8
+        timeout 40m virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
       working-directory: /home/sdausr/mini_pipeline/utils/console
     - name: Clean
       if: always()
@@ -88,7 +88,7 @@ jobs:
     steps:
     - name: Console Output
       run: |
-        sudo ./console.sh ubuntu18.04
+        timeout 40m virsh console ubuntu18.04 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
       working-directory: /home/sdausr/mini_pipeline/utils/console
     - name: Clean
       if: always()
