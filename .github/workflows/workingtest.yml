@@ -9,14 +9,15 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: /home/sdausr/mini_pipeline
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
-          sudo ./utils/kvm/create_vm.sh
+        sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
     - name: Attaching Cards to VM
       run: | 
-          sudo ./utils/kvm/attach_cards.sh
+        sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
 
   XRT:
     needs: vm_creation
@@ -25,7 +26,7 @@ jobs:
       run:
         working-directory: /home/eshwar
         shell: bash
-    timeout-minutes: 50
+    timeout-minutes: 40
     strategy:
       matrix:
         os: [ u200_18.04, u50_7.8, u250_20.04 ]
@@ -33,8 +34,8 @@ jobs:
     steps:
     - name: build XRT
       run: |
-          sudo ./setup.sh
-          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
+        sudo ./setup.sh
+        ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
@@ -43,49 +44,52 @@ jobs:
         path: /home/eshwar/XRT/build/Release
     - name: install XRT
       run: |
-          ./tests/install_xrt/install_xrt.sh
+        ./tests/install_xrt/install_xrt.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          ./tests/reset/reset_card.sh
+        ./tests/reset/reset_card.sh
     - name: examine card
       timeout-minutes: 5
       run: |
-          ./tests/examine/examine.sh
+        ./tests/examine/examine.sh
     - name: validate card
       timeout-minutes: 5
       run: |
-          ./tests/validate/validate.sh
+        ./tests/validate/validate.sh
     - name: drivers reloading
       timeout-minutes: 10
       run: |
-          ./tests/stress/stress_drivers.sh
-    - name: dmesg
-      if: always()
-      run: dmesg
+        ./tests/stress/stress_drivers.sh
           
-  kernel_crash_log:
-    runs-on: log_collector
+  dmesg_centos78:
+    runs-on: log_centos78
     needs: XRT
     defaults:
       run:
         shell: bash
-        working-directory: /home/eshwar
     if: always()
     steps:
-    - name: Setup
-      run: sudo ./setup.sh
-    - name: Centos78
-      if: always()
-      run: sudo ./print.sh centos78
-    - name: Ubuntu18
-      if: always()
-      run: sudo ./print.sh ubuntu18
-    - name: Ubuntu20
-      if: always()
-      run: sudo ./print.sh ubuntu20
+    - name: Console Output
+      run: |
+        sudo ./console.sh centos78
+      working-directory: /home/sdausr/mini_pipeline/utils/console
     - name: Clean
       if: always()
+      run: touch /mnt/nfs_share/unlock.txt
+      
+  dmesg_ubuntu18:
+    runs-on: log_ubuntu18
+    needs: XRT
+    defaults:
+      run:
+        shell: bash
+    if: always()
+    steps:
+    - name: Console Output
       run: |
-          echo "Success" > unlock.txt
-          sudo cp unlock.txt /mnt/lock
+        sudo ./console.sh ubuntu18
+      working-directory: /home/sdausr/mini_pipeline/utils/console
+    - name: Clean
+      if: always()
+      run: touch /mnt/nfs_share/unlock.txt
