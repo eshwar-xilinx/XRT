@@ -11,6 +11,7 @@ jobs:
     runs-on: enclave_host
     steps:
       - name: Step1
+        uses: actions/upload-artifact@v2
         with:
           ssh_config: |
             ForcePTTYAllocation yes
