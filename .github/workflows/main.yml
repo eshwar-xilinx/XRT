@@ -11,6 +11,7 @@ jobs:
     runs-on: enclave_host
     steps:
       - name: Step1
+        timeout-minutes: 2
         run: |
           sudo virsh console ubuntu18.04
         
