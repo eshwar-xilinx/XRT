@@ -15,12 +15,10 @@ jobs:
     steps:
       - name: Step1
         timeout-minutes: 2
-        run: |
-          timeout 1m sudo virsh console ubuntu18.04 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        run: timeout 1m sudo virsh console ubuntu18.04 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
           
   build2:
     runs-on: log_centos78
     steps:
       - name: Run a multi-line script
-        run: |
-          timeout 40m virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        run: timeout 2m virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
