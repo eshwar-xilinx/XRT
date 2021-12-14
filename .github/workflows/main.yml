@@ -11,13 +11,9 @@ jobs:
     runs-on: enclave_host
     steps:
       - name: Step1
-        uses: actions/upload-artifact@v2
-        with:
-          ssh_config: |
-            ForcePTTYAllocation yes
-          commands: |
-            timeout 40m sudo virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
-          
+        run: |
+          sudo virsh console ubuntu18.04
+        
   build2:
     runs-on: log_centos78
     steps:
