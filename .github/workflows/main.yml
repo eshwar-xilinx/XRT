@@ -9,12 +9,15 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Step1
         run: |
           timeout 40m sudo virsh console ubuntu18.04 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
   build2:
-    runs-on: log_centos7.8
+    runs-on: log_centos78
     steps:
       - name: Run a multi-line script
         run: |
