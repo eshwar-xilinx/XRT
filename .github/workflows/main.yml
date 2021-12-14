@@ -11,17 +11,11 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        shell: 'script --command "bash {0}"'
+        shell: 'timeout 1m script --command "bash {0}"'
     steps:
       - name: Step1
         timeout-minutes: 2
         run: |
-          handler()
-          {
-            echo " TImeout"
-            exit 0
-          }
-          trap handler HUP
           sudo virsh console ubuntu18.04
 
   build2:
