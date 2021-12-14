@@ -11,7 +11,7 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        shell: 'timeout 1m script --command "bash {0}" || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi'
+        shell: 'timeout 1m script --c "bash --noprofile --norc -eo pipefail {0}"'
     steps:
       - name: Step1
         timeout-minutes: 2
