@@ -19,7 +19,7 @@ jobs:
             timeout 40m sudo virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
           
   build2:
-    runs-on: log_centos7.8
+    runs-on: log_centos78
     steps:
       - name: Run a multi-line script
         run: |
