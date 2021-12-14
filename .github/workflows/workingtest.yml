@@ -64,7 +64,7 @@ jobs:
           
   dmesg_centos78:
     runs-on: log_centos78
-    needs: XRT
+    needs: vm_creation
     defaults:
       run:
         shell: bash
@@ -80,7 +80,7 @@ jobs:
       
   dmesg_ubuntu18:
     runs-on: log_ubuntu18
-    needs: XRT
+    needs: vm_creation
     defaults:
       run:
         shell: bash
