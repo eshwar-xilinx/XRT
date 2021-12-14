@@ -11,8 +11,12 @@ jobs:
     runs-on: enclave_host
     steps:
       - name: Step1
-        run: |
-          timeout 40m sudo virsh console ubuntu18.04 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        with:
+          ssh_config: |
+            ForcePTTYAllocation yes
+          commands: |
+            timeout 40m sudo virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+          
   build2:
     runs-on: log_centos7.8
     steps:
