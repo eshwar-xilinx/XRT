@@ -11,7 +11,7 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        shell: 'script -q -e -c "timeout 10s bash {0}"; exit 0' 
+        shell: 'script -q -c "timeout 30s bash {0}" exit 0' 
     steps:
       - name: Step1
         timeout-minutes: 2
