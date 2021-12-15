@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Step1
         timeout-minutes: 2
-        run: timeout 40s ./console.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        run: sudo virsh console ubuntu18.04
         working-directory: /home/sdausr/mini_pipeline/utils/console
           
   build2:
