@@ -67,7 +67,7 @@ jobs:
     needs: vm_creation
     defaults:
       run:
-        shell: 'script -q -c "timeout 30s bash {0}" exit 0'
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
     if: always()
     steps:
     - name: Console Output Centos7.8
@@ -82,7 +82,7 @@ jobs:
     needs: vm_creation
     defaults:
       run:
-        shell: 'script -q -c "timeout 30s bash {0}" exit 0'
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
     if: always()
     steps:
     - name: Console Output Ubuntu 18.04
