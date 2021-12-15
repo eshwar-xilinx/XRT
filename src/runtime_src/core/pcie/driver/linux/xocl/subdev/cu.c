@@ -95,7 +95,7 @@ poll_interval_store(struct device *dev, struct device_attribute *attr,
 	if (kstrtou32(buf, 10, &interval) == -EINVAL)
 		return -EINVAL;
 
-	cu->base.interval_min = interval;
+	cu->base.interval_min = interval
 	cu->base.interval_max = interval + 3;
 
 	return count;
