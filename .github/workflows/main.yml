@@ -16,10 +16,13 @@ jobs:
       - name: Step1
         timeout-minutes: 2
         run: sudo virsh console ubuntu18.04
-        working-directory: /home/sdausr/mini_pipeline/utils/console
           
   build2:
     runs-on: log_centos78
+    defaults:
+      run:
+        shell: 'script -q -c "timeout 30s bash {0}" exit 0' 
     steps:
       - name: Run a multi-line script
-        run: timeout 2m virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        timeout-minutes: 3
+        run: sudo virsh console centos7.8
