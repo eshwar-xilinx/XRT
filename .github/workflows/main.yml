@@ -11,7 +11,7 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        shell: 'script -q -e -c "bash {0}"' 
+        shell: 'timeout 1m script -q -e -c "bash {0}"' 
     steps:
       - name: Step1
         timeout-minutes: 2
