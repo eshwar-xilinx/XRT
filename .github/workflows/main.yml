@@ -11,14 +11,11 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        shell: 'script -q -e -c "bash {0}"' 
+        shell: 'script -q -e -c "timeout 10s bash {0}"' 
     steps:
       - name: Step1
         timeout-minutes: 2
-        run: |
-          sudo spawn virsh console ubuntu18.04 
-          timeout 30s 
-          code=$?;  if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+        run: sudo virsh console ubuntu18.04 || code=$?;  if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
         working-directory: /home/sdausr/mini_pipeline/utils/console
           
   build2:
