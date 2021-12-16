@@ -42,22 +42,23 @@ jobs:
       with:
         name: Build Artifacts
         path: /home/eshwar/XRT/build/Release
-    - name: install XRT
+    - name: Install XRT
       run: |
         ./tests/install_xrt/install_xrt.sh
+    - name: Install platform packages
     - name: reset card
       timeout-minutes: 5
       run: |
         ./tests/reset/reset_card.sh
-    - name: examine card
+    - name: Examine card
       timeout-minutes: 5
       run: |
         ./tests/examine/examine.sh
-    - name: validate card
+    - name: Validate card
       timeout-minutes: 5
       run: |
         ./tests/validate/validate.sh
-    - name: drivers reloading
+    - name: Drivers reloading
       timeout-minutes: 10
       run: |
         ./tests/stress/stress_drivers.sh
