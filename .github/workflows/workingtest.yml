@@ -46,6 +46,8 @@ jobs:
       run: |
         ./tests/install_xrt/install_xrt.sh
     - name: Install platform packages
+      run: |
+        ./tests/install_platform/install_platform.sh
     - name: reset card
       timeout-minutes: 5
       run: |
