@@ -21,15 +21,11 @@ jobs:
 
   XRT:
     needs: vm_creation
-    runs-on: ${{matrix.os}}
+    runs-on: u50_7.8
     defaults:
       run:
         shell: bash
-    timeout-minutes: 50
-    strategy:
-      matrix:
-        os: [ u200_18.04, u50_7.8, u250_20.04 ]
-      fail-fast: false
+    timeout-minutes: 40
     steps:
     - name: Setup
       run: sudo ./setup.sh
