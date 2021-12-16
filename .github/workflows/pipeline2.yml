@@ -8,15 +8,16 @@ jobs:
     runs-on: enclave_host
     defaults:
       run:
-        working-directory: /home/sdausr/mini_pipeline
         shell: bash
     steps:
     - name: Creating a VM from snapshot on enclave host
       run: |
           sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
     - name: Attaching Cards to VM
       run: | 
           sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
 
   XRT:
     needs: vm_creation
@@ -37,6 +38,7 @@ jobs:
       uses: actions/checkout@v2
     - name: build XRT
       run: |
+          cd XRT/XRT
           .github/scripts/build_xrt.sh
     - name: XRT build artifacts
       if: always()
@@ -67,28 +69,17 @@ jobs:
       if: always()
       run: dmesg
           
-  kernel_crash_log:
-    runs-on: log_collector
-    needs: XRT
+  dmesg_centos78:
+    runs-on: log_centos78
+    needs: vm_creation
     defaults:
       run:
-        shell: bash
-        working-directory: /home/eshwar
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
     if: always()
     steps:
-    - name: Setup
-      run: sudo ./setup.sh
-    - name: Centos78
-      if: always()
-      run: sudo ./print.sh centos78
-    - name: Ubuntu18
-      if: always()
-      run: sudo ./print.sh ubuntu18
-    - name: Ubuntu20
-      if: always()
-      run: sudo ./print.sh ubuntu20
+    - name: Console Output Centos7.8
+      run: |
+        sudo virsh console centos7.8
     - name: Clean
       if: always()
-      run: |
-          echo "Success" > unlock.txt
-          sudo cp unlock.txt /mnt/lock
+      run: touch /mnt/nfs_share/unlock1.txt
