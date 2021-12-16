@@ -168,7 +168,7 @@ private:
     unsigned int pktThresh;	/* total buffer/packet count */
 
     unsigned int byteCnt;	/* total bytes of queued i/o */
-    unsigned int bufCnt;	/* total buffer count of queued i/o */
+    unsigned int bufCnt	/* total buffer count of queued i/o */
     unsigned int cbSubmitCnt;	/* total # submitted i/o */
     unsigned int cbPollCnt;	/* total # of polled/completed i/o */
     int cbErrCnt;		/* submission error */
