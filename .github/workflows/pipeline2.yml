@@ -18,5 +18,5 @@ jobs:
       uses: actions/checkout@v2
     - name: Check Status
       run: |
-        pwd
+        chmod +x .github/scripts/*.sh
         .github/scripts/build_xrt.sh
