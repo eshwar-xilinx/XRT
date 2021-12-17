@@ -9,14 +9,19 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: /home/sdausr/mini_pipeline
     steps:
+    - name: Acquire Host
+      run: |
+        while [ ! -f /mnt/nfs_share/unlock.txt ]; do sleep 1m;echo "Look at me"; done
+        sudo rm -f /mnt/nfs_share/unlock.txt > /dev/null
     - name: Creating a VM from snapshot on enclave host
       run: |
-          sudo ./utils/kvm/create_vm.sh
+        sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
     - name: Attaching Cards to VM
       run: | 
-          sudo ./utils/kvm/attach_cards.sh
+        sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
 
   XRT:
     needs: vm_creation
@@ -25,67 +30,63 @@ jobs:
       run:
         working-directory: /home/eshwar
         shell: bash
-    timeout-minutes: 50
+    timeout-minutes: 40
     strategy:
       matrix:
-        os: [ u200_18.04, u50_7.8, u250_20.04 ]
+        os: [ u200_18.04, u50_7.8, u250_20.04]
       fail-fast: false
     steps:
     - name: build XRT
       run: |
-          sudo ./setup.sh
-          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
+        sudo ./setup.sh
+        ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
       with:
         name: Build Artifacts
         path: /home/eshwar/XRT/build/Release
-    - name: install XRT
+    - name: Install XRT
       run: |
-          ./tests/install_xrt/install_xrt.sh
+        ./tests/install_xrt/install_xrt.sh
+    - name: Install platform packages
+      run: |
+        ./tests/install_platform/install_platform.sh
     - name: reset card
       timeout-minutes: 5
       run: |
-          ./tests/reset/reset_card.sh
-    - name: examine card
+        ./tests/reset/reset_card.sh
+    - name: Examine card
       timeout-minutes: 5
       run: |
-          ./tests/examine/examine.sh
-    - name: validate card
+        ./tests/examine/examine.sh
+    - name: Validate card
       timeout-minutes: 5
       run: |
-          ./tests/validate/validate.sh
-    - name: drivers reloading
+        ./tests/validate/validate.sh
+    - name: Drivers reloading
       timeout-minutes: 10
       run: |
-          ./tests/stress/stress_drivers.sh
-    - name: dmesg
-      if: always()
-      run: dmesg
-          
-  kernel_crash_log:
-    runs-on: log_collector
-    needs: XRT
+        ./tests/stress/stress_drivers.sh
+      
+  ConsoleOutput:
+    runs-on: ${{ matrix.os }}
+    needs: vm_creation
     defaults:
       run:
-        shell: bash
-        working-directory: /home/eshwar
-    if: always()
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    strategy:
+      matrix:
+        os: [ ubuntu18.04, centos7.8, ubuntu20.04 ]
+      fail-fast: false
     steps:
-    - name: Setup
-      run: sudo ./setup.sh
-    - name: Centos78
-      if: always()
-      run: sudo ./print.sh centos78
-    - name: Ubuntu18
-      if: always()
-      run: sudo ./print.sh ubuntu18
-    - name: Ubuntu20
-      if: always()
-      run: sudo ./print.sh ubuntu20
+    - name: Console Output
+      run: |
+        sudo virsh console ${{ matrix.os }}
+  
+  Cleanup:
+    runs-on: cleanup
+    steps:
     - name: Clean
       if: always()
-      run: |
-          echo "Success" > unlock.txt
-          sudo cp unlock.txt /mnt/lock
+      run: touch /mnt/nfs_share/unlock.txt
