@@ -11,7 +11,9 @@ jobs:
         shell: bash
     steps:
     - name: Acquire Host
-      run: wait for unlock.txt exists
+      run: |
+        while [ ! -f /mnt/nfs_share/unlock.txt ]; do sleep 1m;echo "Look at me"; done
+        sudo rm -f /mnt/nfs_share/unlock.txt > /dev/null
     - name: Creating a VM from snapshot on enclave host
       run: |
         sudo ./create_vm.sh
