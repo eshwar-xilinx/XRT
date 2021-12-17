@@ -1,6 +1,5 @@
 #!/bin/bash
 
-#####################################################################################################
 BDF1=$(lspci -d 10ee: | awk '{print $1}' | awk ' FNR == 1')
 DEVID1=$(lspci -d 10ee: | awk '{print $7}' | awk ' FNR == 1')
 
@@ -16,18 +15,15 @@ else
         USERPF=$BDF2
         MGMTPF=$BDF1
 fi
+
+cd ~/u*
 if [[ $DEVID1 != "5005" ]]; then	#for u250 card, shell needs to be updated
         if [[ $DISTRO == "centos" ]]; then
-		cd $CWD/u*
                 sudo yum install -y ./xilinx*.rpm
         else
-		sudo rm -rf $CWD/ubuntu* > /dev/null 2>&1
-		cd $CWD/u*
                 sudo apt install ./xilinx*.deb
         fi
 else
-	sudo rm -rf $CWD/ubuntu* > /dev/null 2>&1
-        cd $CWD/u*
         sudo apt install ./xilinx-cmc*.deb
         sudo apt install ./xilinx-sc-fw*.deb
         sudo apt install ./xilinx*base*.deb
