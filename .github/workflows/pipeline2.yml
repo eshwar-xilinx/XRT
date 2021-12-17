@@ -4,92 +4,21 @@ on:
   pull_request:
 
 jobs:
-  vm_creation:
-    runs-on: enclave_host
-    defaults:
-      run:
-        working-directory: /home/sdausr/mini_pipeline
-        shell: bash
-    steps:
-    - name: Creating a VM from snapshot on enclave host
-      run: |
-          sudo ./create_vm.sh
-    - name: Attaching Cards to VM
-      run: | 
-          sudo ./attach_cards.sh
-
   XRT:
-    needs: vm_creation
-    runs-on: ${{matrix.os}}
+    runs-on: u50_7.8
     defaults:
       run:
         shell: bash
-    timeout-minutes: 50
-    strategy:
-      matrix:
-        os: [ u200_18.04, u50_7.8, u250_20.04 ]
-      fail-fast: false
+    timeout-minutes: 40
     steps:
     - name: Setup
       run: sudo ./setup.sh
       working-directory: /home/eshwar
     - name: Checkout PR
       uses: actions/checkout@v2
-    - name: build XRT
+    - name: Check Status
       run: |
-          cd XRT/XRT
-          sudo .github/scripts/build_xrt.sh
-    - name: XRT build artifacts
-      if: always()
-      uses: actions/upload-artifact@v2
-      with:
-        name: Build Artifacts
-        path: build/Release
-    - name: install XRT
-      run: |
-          sudo .github/scripts/install_xrt.sh
-    - name: reset card
-      timeout-minutes: 5
-      run: |
-          sudo .github/scripts/reset_card.sh
-    - name: examine card
-      timeout-minutes: 5
-      run: |
-          sudo .github/scripts/examine.sh
-    - name: validate card
-      timeout-minutes: 5
-      run: |
-          sudo .github/scripts/validate.sh
-    - name: drivers reloading
-      timeout-minutes: 10
-      run: |
-          sudo .github/scripts/stress_drivers.sh
-    - name: dmesg
-      if: always()
-      run: dmesg
-          
-  kernel_crash_log:
-    runs-on: log_collector
-    needs: XRT
-    defaults:
-      run:
-        shell: bash
-        working-directory: /home/eshwar
-    if: always()
-    steps:
-    - name: Setup
-      run: sudo ./setup.sh
-    - name: Centos78
-      if: always()
-      run: sudo ./print.sh centos78
-    - name: Ubuntu18
-      if: always()
-      run: sudo ./print.sh ubuntu18
-    - name: Ubuntu20
-      if: always()
-      run: sudo ./print.sh ubuntu20
-    - name: Clean
-      if: always()
-      run: |
-          echo "Success" > unlock.txt
-          sudo cp unlock.txt /mnt/lock
+        echo $PATH
+        echo $USER
+        pwd
+        ls -al
