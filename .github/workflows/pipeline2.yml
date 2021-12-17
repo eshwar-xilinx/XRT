@@ -19,4 +19,4 @@ jobs:
     - name: Build XRT
       run: |
         pwd
-        ./github/scripts/build_xrt.sh
+        .github/scripts/build_xrt.sh
