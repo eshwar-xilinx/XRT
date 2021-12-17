@@ -16,9 +16,7 @@ jobs:
       working-directory: /home/eshwar
     - name: Checkout PR
       uses: actions/checkout@v2
-    - name: Check Status
+    - name: Build XRT
       run: |
-        echo $PATH
-        echo $USER
         pwd
-        ls -al
+        ./github/scripts/build_xrt.sh
