@@ -1,3 +1,3 @@
 #!/bin/bash
 
-/opt/xilinx/xrt/bin/xbutil reset -d
+xball xbutil reset
