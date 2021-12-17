@@ -10,6 +10,8 @@ jobs:
       run:
         shell: bash
     steps:
+    - name: Acquire Host
+      run: wait for unlock.txt exists
     - name: Creating a VM from snapshot on enclave host
       run: |
         sudo ./create_vm.sh
