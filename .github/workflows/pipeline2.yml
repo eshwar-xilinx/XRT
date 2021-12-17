@@ -5,7 +5,7 @@ on:
 
 jobs:
   XRT:
-    runs-on: u250_20.04
+    runs-on: u50_7.8
     defaults:
       run:
         shell: bash
