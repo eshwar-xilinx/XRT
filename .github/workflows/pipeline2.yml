@@ -30,6 +30,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    strategy:
+      matrix:
+        os: [ u200_18.04, u50_7.8, u250_20.04]
+      fail-fast: false
     timeout-minutes: 40
     steps:
     - name: Setup
