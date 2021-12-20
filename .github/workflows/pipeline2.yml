@@ -24,6 +24,7 @@ jobs:
         sudo .github/scripts/attach_cards.sh
   XRT:
     runs-on: u50_7.8
+    needs: vm_creation
     defaults:
       run:
         shell: bash
@@ -79,7 +80,10 @@ jobs:
         
   Cleanup:
     runs-on: cleanup
+    needs: XRT
     steps:
     - name: Clean
       if: always()
-      run: touch /mnt/nfs_share/unlock.txt
+      run: |
+        sudo virsh destroy centos7.8
+        touch /mnt/nfs_share/unlock.txt
