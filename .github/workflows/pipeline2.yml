@@ -16,6 +16,8 @@ jobs:
         while [ ! -f /mnt/nfs_share/unlock.txt ]; do sleep 1m; done
         echo "Previous PR is complete"
         sudo rm -f /mnt/nfs_share/unlock.txt > /dev/null
+    - name: Checkout PR
+      uses: actions/checkout@v2
     - name: Creating a VM from snapshot on enclave host
       run: |
         sudo .github/scripts/create_vm.sh
@@ -81,9 +83,9 @@ jobs:
   Cleanup:
     runs-on: cleanup
     needs: XRT
+    if: always()
     steps:
     - name: Clean
-      if: always()
       run: |
         sudo virsh destroy centos7.8
         touch /mnt/nfs_share/unlock.txt
