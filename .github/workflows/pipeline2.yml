@@ -82,7 +82,7 @@ jobs:
     steps:
     - name: Console Output
       run: |
-        sudo virsh console $(( matrix.os }}
+        sudo virsh console ${{ matrix.os }}
         
   Cleanup:
     runs-on: cleanup
