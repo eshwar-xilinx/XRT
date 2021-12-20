@@ -1,0 +1,50 @@
+name: Pipeline Test 2
+
+on:     
+  pull_request:
+
+jobs:
+  XRT:
+    runs-on: u50_7.8
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 40
+    steps:
+    - name: Setup
+      run: sudo ./setup.sh
+      working-directory: /home/eshwar
+    - name: Checkout PR
+      uses: actions/checkout@v2
+    - name: Check Status
+      run: |
+        chmod +x .github/scripts/*.sh
+        .github/scripts/build_xrt.sh
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: build/Release
+    - name: Install XRT
+      run: |
+        .github/scripts/install_xrt.sh
+    - name: Install platform packages
+      run: |
+        .github/scripts/install_platform.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/reset_card.sh
+    - name: Examine card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/examine.sh
+    - name: Validate card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/validate.sh
+    - name: Drivers reloading
+      timeout-minutes: 10
+      run: |
+        .github/scripts/stress_drivers.sh
