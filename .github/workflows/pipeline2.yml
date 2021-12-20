@@ -70,15 +70,19 @@ jobs:
         .github/scripts/stress_drivers.sh
         
   ConsoleOutput:
-    runs-on: centos7.8
+    runs-on: ${{ matrix.os }}
     needs: vm_creation
     defaults:
       run:
         shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    strategy:
+      matrix:
+        os: [ ubuntu18.04, centos7.8, ubuntu20.04 ]
+      fail-fast: false
     steps:
     - name: Console Output
       run: |
-        sudo virsh console centos7.8
+        sudo virsh console $(( matrix.os }}
         
   Cleanup:
     runs-on: cleanup
@@ -88,4 +92,6 @@ jobs:
     - name: Clean
       run: |
         sudo virsh destroy centos7.8
+        sudo virsh destroy ubuntu18.04
+        sudo virsh destroy ubuntu20.04
         touch /mnt/nfs_share/unlock.txt
