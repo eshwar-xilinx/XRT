@@ -1,5 +1,6 @@
+#!/bin/bash
 
-n attach_device()
+attach_device()
 {
 	DOMAIN=$1
 	PCI_ID=$2
