@@ -20,12 +20,12 @@ n attach_device()
 }
 ###########################################################################################################
 
-attach_device ubuntu18.04 pci_0000_3b_00_1 template.xml
-attach_device ubuntu18.04 pci_0000_3b_00_0 template.xml
+attach_device ubuntu18.04 pci_0000_3b_00_1 .github/scripts/template.xml
+attach_device ubuntu18.04 pci_0000_3b_00_0 .github/scripts/template.xml
 
-attach_device ubuntu18.04 pci_0000_5e_00_1 template.xml
-attach_device ubuntu18.04 pci_0000_5e_00_0 template.xml
+attach_device ubuntu18.04 pci_0000_5e_00_1 .github/scripts/template.xml
+attach_device ubuntu18.04 pci_0000_5e_00_0 .github/scripts/template.xml
 
-attach_device ubuntu20.04 pci_0000_d8_00_1 template.xml
-attach_device ubuntu20.04 pci_0000_d8_00_0 template.xml
+attach_device ubuntu20.04 pci_0000_d8_00_1 .github/scripts/template.xml
+attach_device ubuntu20.04 pci_0000_d8_00_0 .github/scripts/template.xml
 
