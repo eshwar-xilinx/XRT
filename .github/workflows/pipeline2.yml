@@ -37,8 +37,7 @@ jobs:
     timeout-minutes: 40
     steps:
     - name: Setup
-      run: sudo ./setup.sh
-      working-directory: ~/pipeline
+      run: sudo ~/setup.sh
     - name: Checkout PR
       uses: actions/checkout@v2
     - name: Build XRT
