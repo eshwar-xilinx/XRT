@@ -16,7 +16,7 @@ attach_device()
 	xmlstarlet ed -L -u '//hostdev/source/address/@function' -v "$FUNCTION0" $XML_FILE
 	rm -f temp.xml
 
-	virsh attach-device $DOMAIN $XML_FILE 
+	virsh attach-device $DOMAIN $XML_FILE --live
 	sleep 5s
 }
 ###########################################################################################################
