@@ -6,18 +6,14 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    runs-on: enclave_host
-    steps:
-      - name: Step1
-        timeout-minutes: 2
-        run: |
-          sudo virsh console ubuntu18.04
-        
+  # This workflow contains a single job called "build"        
   build2:
-    runs-on: log_centos78
+    runs-on: centos7.8
     steps:
       - name: Run a multi-line script
         run: |
-          timeout 40m virsh console centos7.8 || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+          echo $PATH
+          ls -al ~/
+      - name : Check if working directory identified
+        run: ls -al
+        working-directory: ~/
