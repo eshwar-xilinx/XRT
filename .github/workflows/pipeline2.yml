@@ -1,4 +1,4 @@
-name: Pipeline Test 2
+name: Pipeline Test
 
 on:     
   pull_request:
@@ -13,17 +13,17 @@ jobs:
     - name: Acquire Host
       run: |
         echo "Wait for Previous PR to complete"
-        while [ ! -f /mnt/nfs_share/unlock.txt ]; do sleep 1m; done
+        while [ ! -f ~/pipeline/unlock.txt ]; do sleep 1m; done
         echo "Previous PR is complete"
-        sudo rm -f /mnt/nfs_share/unlock.txt > /dev/null
+        sudo rm -f ~/pipeline/unlock.txt > /dev/null
     - name: Checkout PR
       uses: actions/checkout@v2
     - name: Creating a VM from snapshot on enclave host
       run: |
-        sudo .github/scripts/create_vm.sh
+        sudo .github/scripts/pipeline/create_vm.sh
     - name: Attaching Cards to VM
       run: | 
-        sudo .github/scripts/attach_cards.sh
+        sudo .github/scripts/pipeline/attach_cards.sh
   verification:
     runs-on: ${{ matrix.os }}
     needs: vm_creation
@@ -38,12 +38,12 @@ jobs:
     steps:
     - name: Setup
       run: sudo ./setup.sh
-      working-directory: /home/eshwar
+      working-directory: ~/pipeline
     - name: Checkout PR
       uses: actions/checkout@v2
     - name: Build XRT
       run: |
-        .github/scripts/build_xrt.sh
+        .github/scripts/pipeline/build_xrt.sh
     - name: XRT build artifacts
       if: always()
       uses: actions/upload-artifact@v2
@@ -52,10 +52,10 @@ jobs:
         path: build/Release
     - name: Install XRT
       run: |
-        .github/scripts/install_xrt.sh
+        .github/scripts/pipeline/install_xrt.sh
     - name: Install platform packages
       run: |
-        .github/scripts/install_platform.sh
+        .github/scripts/pipeline/install_platform.sh
     - name: reset card
       timeout-minutes: 5
       run: |
@@ -107,4 +107,4 @@ jobs:
         sudo virsh destroy centos7.8
         sudo virsh destroy ubuntu18.04
         sudo virsh destroy ubuntu20.04
-        touch /mnt/nfs_share/unlock.txt
+        touch ~/pipeline/unlock.txt
