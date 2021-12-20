@@ -24,7 +24,7 @@ jobs:
     - name: Attaching Cards to VM
       run: | 
         sudo .github/scripts/attach_cards.sh
-  XRT:
+  verification:
     runs-on: ${{ matrix.os }}
     needs: vm_creation
     defaults:
@@ -59,19 +59,28 @@ jobs:
     - name: reset card
       timeout-minutes: 5
       run: |
-        .github/scripts/reset_card.sh
+        source /opt/xilinx/xrt/setup.sh
+        echo "Y" | xbutil reset -d
     - name: Examine card
       timeout-minutes: 5
       run: |
-        .github/scripts/examine.sh
+        source /opt/xilinx/xrt/setup.sh
+        xbutil examine
     - name: Validate card
       timeout-minutes: 5
       run: |
-        .github/scripts/validate.sh
+        source /opt/xilinx/xrt/setup.sh
+        xbutil validate -d --verbose --batch
     - name: Drivers reloading
       timeout-minutes: 10
       run: |
-        .github/scripts/stress_drivers.sh
+        x=1
+        while [ $x -le 10 ]
+        do
+                sudo rmmod xocl && sudo rmmod xclmgmt
+                sudo modprobe xocl && sudo modprobe xclmgmt
+                x=$(( $x + 1 ))
+        done
         
   ConsoleOutput:
     runs-on: ${{ matrix.os }}
@@ -90,7 +99,7 @@ jobs:
         
   Cleanup:
     runs-on: cleanup
-    needs: XRT
+    needs: verification
     if: always()
     steps:
     - name: Clean
