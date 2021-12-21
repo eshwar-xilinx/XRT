@@ -1,4 +1,4 @@
-name: Pipeline Test
+name: Mini Pipeline
 
 on:     
   pull_request:
