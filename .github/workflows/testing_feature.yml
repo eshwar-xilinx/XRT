@@ -34,4 +34,5 @@ jobs:
         run: sleep 30m
 
       - name: Cleanup
+        if: always()
         run: rm test/pipeline.txt
