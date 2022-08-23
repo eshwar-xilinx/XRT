@@ -23,6 +23,7 @@ import ctypes
 
 libc = ctypes.CDLL(os.environ['XILINX_XRT'] + "/lib/libxrt_core.so")
 
+# this is just check
 
 """
     AXLF LAYOUT
