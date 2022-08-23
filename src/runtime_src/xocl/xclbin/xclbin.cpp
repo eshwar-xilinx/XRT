@@ -52,7 +52,7 @@ class xclbin_data_sections
   };
 
   std::vector<membank> m_membanks;
-  std::vector<int32_t> m_mem2grp;
+  std::vector<int32_t> m_mem2grp
 
   template <typename SectionType>
   SectionType
