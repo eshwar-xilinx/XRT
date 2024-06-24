@@ -1,0 +1,85 @@
+name: Pipeline Test 2
+
+on:     
+  pull_request:
+
+jobs:
+  vm_creation:
+    runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Acquire Host
+      run: |
+        echo "Wait for Previous PR to complete"
+        while [ ! -f /mnt/nfs_share/unlock.txt ]; do sleep 1m; done
+        echo "Previous PR is complete"
+        sudo rm -f /mnt/nfs_share/unlock.txt > /dev/null
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+        sudo .github/scripts/create_vm.sh
+    - name: Attaching Cards to VM
+      run: | 
+        sudo .github/scripts/attach_cards.sh
+  XRT:
+    runs-on: u50_7.8
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 40
+    steps:
+    - name: Setup
+      run: sudo ./setup.sh
+      working-directory: /home/eshwar
+    - name: Checkout PR
+      uses: actions/checkout@v2
+    - name: Check Status
+      run: |
+        .github/scripts/build_xrt.sh
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: build/Release
+    - name: Install XRT
+      run: |
+        .github/scripts/install_xrt.sh
+    - name: Install platform packages
+      run: |
+        .github/scripts/install_platform.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/reset_card.sh
+    - name: Examine card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/examine.sh
+    - name: Validate card
+      timeout-minutes: 5
+      run: |
+        .github/scripts/validate.sh
+    - name: Drivers reloading
+      timeout-minutes: 10
+      run: |
+        .github/scripts/stress_drivers.sh
+        
+  ConsoleOutput:
+    runs-on: centos7.8
+    needs: vm_creation
+    defaults:
+      run:
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    steps:
+    - name: Console Output
+      run: |
+        sudo virsh console centos7.8
+        
+  Cleanup:
+    runs-on: cleanup
+    steps:
+    - name: Clean
+      if: always()
+      run: touch /mnt/nfs_share/unlock.txt
