@@ -1,0 +1,108 @@
+name: WorkingTest
+
+on:     
+  pull_request:
+
+jobs:
+  vm_creation:
+    runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+        sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
+    - name: Attaching Cards to VM
+      run: | 
+        sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
+
+  XRT:
+    needs: vm_creation
+    runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
+    timeout-minutes: 40
+    strategy:
+      matrix:
+        os: [ u200_18.04, u50_7.8, u250_20.04]
+      fail-fast: false
+    steps:
+    - name: build XRT
+      run: |
+        sudo ./setup.sh
+        ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: /home/eshwar/XRT/build/Release
+    - name: install XRT
+      run: |
+        ./tests/install_xrt/install_xrt.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+        ./tests/reset/reset_card.sh
+    - name: examine card
+      timeout-minutes: 5
+      run: |
+        ./tests/examine/examine.sh
+    - name: validate card
+      timeout-minutes: 5
+      run: |
+        ./tests/validate/validate.sh
+    - name: drivers reloading
+      timeout-minutes: 10
+      run: |
+        ./tests/stress/stress_drivers.sh
+          
+  dmesg_centos78:
+    runs-on: log_centos78
+    needs: vm_creation
+    defaults:
+      run:
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    if: always()
+    steps:
+    - name: Console Output Centos7.8
+      run: |
+        sudo virsh console centos7.8
+    - name: Clean
+      if: always()
+      run: touch /mnt/nfs_share/unlock1.txt
+      
+  dmesg_ubuntu18:
+    runs-on: log_ubuntu18
+    needs: vm_creation
+    defaults:
+      run:
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    if: always()
+    steps:
+    - name: Console Output Ubuntu 18.04
+      run: |
+        sudo virsh console ubuntu18.04
+    - name: Clean
+      if: always()
+      run: touch /mnt/nfs_share/unlock2.txt
+      
+  dmesg_ubuntu2004:
+    runs-on: log_ubuntu20
+    needs: vm_creation
+    defaults:
+      run:
+        shell: 'script -q -c "timeout 40m bash {0}" exit 0'
+    if: always()
+    steps:
+    - name: Console Output Ubuntu20.04
+      run: |
+        sudo virsh console ubuntu20.04
+    - name: Clean
+      if: always()
+      run: touch /mnt/nfs_share/unlock3.txt
