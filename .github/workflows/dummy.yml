@@ -1,0 +1,81 @@
+name: DUMMY
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  vm_creation:
+    runs-on: enclave_host
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Creating a VM from snapshot on enclave host
+      run: |
+          sudo ./create_vm.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
+    - name: Attaching Cards to VM
+      run: | 
+          sudo ./attach_cards.sh
+      working-directory: /home/sdausr/mini_pipeline/utils/kvm
+      
+  XRT:
+    needs: vm_creation
+    runs-on: u50_7.8
+    defaults:
+      run:
+        working-directory: /home/eshwar
+        shell: bash
+    timeout-minutes: 40
+    steps:
+    - name: build XRT
+      run: |
+          sudo ./setup.sh
+          ./tests/build_xrt/build_xrt.sh ${{github.event.pull_request.number}}
+    - name: XRT build artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Build Artifacts
+        path: /home/eshwar/XRT/build/Release
+    - name: install XRT
+      run: |
+          ./tests/install_xrt/install_xrt.sh
+    - name: reset card
+      timeout-minutes: 5
+      run: |
+          ./tests/reset/reset_card.sh
+    - name: examine card
+      timeout-minutes: 5
+      run: |
+          ./tests/examine/examine.sh
+    - name: validate card
+      timeout-minutes: 5
+      run: |
+          ./tests/validate/validate.sh
+    - name: drivers reloading
+      timeout-minutes: 10
+      run: |
+          ./tests/stress/stress_drivers.sh
+    - name: dmesg
+      if: always()
+      run: dmesg
+
+  timeout_job:
+    needs: vm_creation
+    runs-on: log_collector
+    steps:
+     - name: Setup
+       run: sudo ./setup.sh
+       working-directory: /home/eshwar
+     - name: Ubuntu 18 dmesg
+       run: |
+         timeout 40m ./dmesg.sh || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+       working-directory: /home/eshwar
+     - name: Clean up
+       if: always()
+       run: |
+         echo "Success" > unlock.txt
+         sudo cp unlock.txt /mnt/lock
+         
