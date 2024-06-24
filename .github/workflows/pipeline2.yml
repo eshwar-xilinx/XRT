@@ -1,0 +1,22 @@
+name: Pipeline Test 2
+
+on:     
+  pull_request:
+
+jobs:
+  XRT:
+    runs-on: u50_7.8
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 40
+    steps:
+    - name: Setup
+      run: sudo ./setup.sh
+      working-directory: /home/eshwar
+    - name: Checkout PR
+      uses: actions/checkout@v2
+    - name: Check Status
+      run: |
+        chmod +x .github/scripts/*.sh
+        .github/scripts/build_xrt.sh
